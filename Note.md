@@ -1,0 +1,1 @@
+The team recommends merging the document as Policy and Protocol.
