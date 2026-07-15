@@ -45,6 +45,9 @@ type Overview = {
     districts: number;
     markets: number;
     outlets: number;
+    outlets_created: number;
+    active_readers: number;
+    readers_reporting: number;
     items: number;
     products: number;
     users: number;
@@ -171,6 +174,8 @@ export default function DashboardPage() {
                 <MetricCard label="Products priced" value={overview.summary.products_priced} hint={`of ${number.format(overview.summary.products)} products`} accent="pink" />
                 <MetricCard label="Regions" value={overview.summary.regions} hint={`${number.format(overview.summary.districts)} districts`} />
                 <MetricCard label="Markets" value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
+                <MetricCard label="Outlets created" value={overview.summary.outlets_created} hint={`${number.format(overview.summary.outlets)} currently active`} accent="purple" />
+                <MetricCard label="Readers who submitted" value={overview.summary.readers_reporting} hint={`of ${number.format(overview.summary.active_readers)} active readers`} accent="pink" />
                 <MetricCard label="Users" value={overview.summary.users} hint="Active system users" accent="pink" />
               </section>
 

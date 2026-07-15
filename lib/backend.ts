@@ -11,6 +11,7 @@ type BackendRequestInit = {
   method?: string;
   headers?: Record<string, string>;
   body?: string;
+  timeoutMs?: number;
 };
 
 // Node's native fetch follows the browser unsafe-port list and blocks port 6000.
@@ -47,7 +48,7 @@ export function dashboardBackendRequest(path: string, init: BackendRequestInit =
       }
     );
     request.on("error", reject);
-    request.setTimeout(10_000, () => request.destroy(new Error("Backend request timed out")));
+    request.setTimeout(init.timeoutMs ?? 10_000, () => request.destroy(new Error("Backend request timed out")));
     if (init.body) request.write(init.body);
     request.end();
   });
