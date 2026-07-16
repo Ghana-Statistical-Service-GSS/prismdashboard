@@ -4,16 +4,20 @@
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
+import { useEffect, useState } from "react";
 import { useAuthActions } from "@/hooks/useAuthActions";
+import type { DashboardUser } from "@/lib/auth";
 
 type NavItem = {
   label: string;
   href?: string;
+  hiddenForRs?: boolean;
 };
 
 type NavSection = {
   title: string;
   items: NavItem[];
+  hiddenForRs?: boolean;
 };
 
 const navSections: NavSection[] = [
@@ -23,7 +27,7 @@ const navSections: NavSection[] = [
       { label: "Dashboard", href: "/dashboard" },
       { label: "Reports", href: "/reports" },
       { label: "Validations", href: "/validations" },
-      { label: "SMS Alerts", href: "/sms" },
+      { label: "SMS Alerts", href: "/sms", hiddenForRs: true },
       { label: "Photo Album", href: "/photos" },
       { label: "Assignments", href: "/assignments" },
       { label: "Field Officers", href: "/field-officers" },
@@ -31,6 +35,7 @@ const navSections: NavSection[] = [
   },
   {
     title: "CONFIGURATION",
+    hiddenForRs: true,
     items: [
       { label: "Regions", href: "/regions" },
       { label: "Districts", href: "/districts" },
@@ -42,6 +47,7 @@ const navSections: NavSection[] = [
   },
   {
     title: "VALIDATE",
+    hiddenForRs: true,
     items: [
       { label: "Validation", href: "/validation" },
       { label: "Threshold Exception (Price)", href: "/threshold-exception" },
@@ -53,6 +59,24 @@ const navSections: NavSection[] = [
 export function Sidebar() {
   const pathname = usePathname();
   const { signOut } = useAuthActions();
+  const [role, setRole] = useState<DashboardUser["role"] | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((response) => response.ok ? response.json() : null)
+      .then((body) => { if (active && body?.user?.role) setRole(body.user.role); })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
+
+  const isRs = role === "REGIONAL_STATISTICIAN";
+  const visibleSections = navSections
+    .filter((section) => !(section.hiddenForRs && (isRs || role === null)))
+    .map((section) => ({
+      ...section,
+      items: section.items.filter((item) => !(item.hiddenForRs && (isRs || role === null))),
+    }));
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-prism-border bg-white">
@@ -78,7 +102,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-6 py-4 space-y-6 text-sm">
-        {navSections.map((section) => (
+        {visibleSections.map((section) => (
           <div key={section.title}>
             <p className="mb-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-prism-muted">
               {section.title}
