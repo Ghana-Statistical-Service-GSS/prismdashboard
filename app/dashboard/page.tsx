@@ -40,6 +40,12 @@ type RankingRow = {
 
 type Overview = {
   generated_at: string;
+  scope: {
+    level: "NATIONAL" | "REGION";
+    role: "SUPERVISOR" | "REGIONAL_STATISTICIAN" | "HQ" | "ADMIN";
+    region_id: string | null;
+    region_name: string | null;
+  };
   summary: {
     regions: number;
     districts: number;
@@ -108,7 +114,14 @@ export default function DashboardPage() {
         if (!response.ok) throw new Error(data?.error?.message || "Unable to load dashboard data");
         return data;
       })
-      .then((data) => { if (active) setOverview(data); })
+      .then((data: Overview) => {
+        if (!active) return;
+        setOverview(data);
+        if (data.scope.level === "REGION") {
+          setLevel("districts");
+          setRegionId(data.scope.region_id || "all");
+        }
+      })
       .catch((reason) => { if (active) setError(reason.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -130,7 +143,10 @@ export default function DashboardPage() {
     return overview.submissions.districts.filter((row) => regionId === "all" || row.region_id === regionId);
   }, [overview, regionId]);
 
-  const maxRegionSubmissions = Math.max(...(overview?.submissions.regions.map((row) => row.prices_submitted) || [1]), 1);
+  const isRegional = overview?.scope.level === "REGION";
+  const primarySubmissionRows = isRegional ? overview?.submissions.districts || [] : overview?.submissions.regions || [];
+  const maxPrimarySubmissions = Math.max(...primarySubmissionRows.map((row) => row.prices_submitted), 1);
+  const drillLevels: Level[] = isRegional ? ["districts", "markets", "users"] : ["regions", "districts", "markets", "users"];
 
   const drillTo = (nextLevel: Level, row?: SubmissionRow) => {
     if (row?.region_id || level === "regions") setRegionId(row?.region_id || row?.id || "all");
@@ -150,7 +166,9 @@ export default function DashboardPage() {
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-prism-teal">Operations overview</p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-prism-text md:text-4xl">Market Initiation Dashboard</h1>
               <p className="mt-2 max-w-2xl text-sm text-prism-muted">
-                Track submitted prices from the national view down to regions, districts, markets and field users.
+                {isRegional
+                  ? `Track submitted prices across the districts, markets and field users in ${overview?.scope.region_name || "your assigned region"}.`
+                  : "Track submitted prices from the national view down to regions, districts, markets and field users."}
               </p>
             </div>
             <div className="inline-flex w-fit rounded-full border border-prism-border bg-white p-1.5 shadow-sm">
@@ -172,7 +190,7 @@ export default function DashboardPage() {
                 <MetricCard label="Prices submitted" value={overview.summary.prices_submitted} hint={`Latest: ${formatDate(overview.summary.last_submission_at)}`} accent="teal" />
                 <MetricCard label="Items priced" value={overview.summary.items_priced} hint={`of ${number.format(overview.summary.items)} active items`} />
                 <MetricCard label="Products priced" value={overview.summary.products_priced} hint={`of ${number.format(overview.summary.products)} products`} accent="pink" />
-                <MetricCard label="Regions" value={overview.summary.regions} hint={`${number.format(overview.summary.districts)} districts`} />
+                <MetricCard label={isRegional ? "Districts" : "Regions"} value={isRegional ? overview.summary.districts : overview.summary.regions} hint={isRegional ? `${number.format(overview.summary.markets)} markets in ${overview.scope.region_name || "assigned region"}` : `${number.format(overview.summary.districts)} districts`} />
                 <MetricCard label="Markets" value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
                 <MetricCard label="Outlets created" value={overview.summary.outlets_created} hint={`${number.format(overview.summary.outlets)} currently active`} accent="purple" />
                 <MetricCard label="Readers who submitted" value={overview.summary.readers_reporting} hint={`of ${number.format(overview.summary.active_readers)} active readers`} accent="pink" />
@@ -183,20 +201,20 @@ export default function DashboardPage() {
                 <div className="rounded-3xl border border-prism-border/70 bg-white p-6 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-base font-black text-prism-text">Prices submitted by region</h2>
-                      <p className="mt-1 text-xs text-prism-muted">All recorded market-initiation quote submissions</p>
+                      <h2 className="text-base font-black text-prism-text">Prices submitted by {isRegional ? "district" : "region"}</h2>
+                      <p className="mt-1 text-xs text-prism-muted">{isRegional ? overview.scope.region_name : "All recorded market-initiation quote submissions"}</p>
                     </div>
                     <span className="rounded-full bg-prism-teal/10 px-3 py-1.5 text-xs font-bold text-teal-700">Live database</span>
                   </div>
                   <div className="mt-6 space-y-4">
-                    {overview.submissions.regions.map((row) => (
-                      <button key={row.id} onClick={() => drillTo("districts", row)} className="group block w-full text-left">
+                    {primarySubmissionRows.map((row) => (
+                      <button key={row.id} onClick={() => drillTo(isRegional ? "markets" : "districts", row)} className="group block w-full text-left">
                         <div className="mb-1.5 flex items-center justify-between gap-4 text-xs">
                           <span className="font-bold text-prism-text group-hover:text-prism-purple">{row.name}</span>
                           <span className="font-black text-prism-purple">{number.format(row.prices_submitted)}</span>
                         </div>
                         <div className="h-2.5 overflow-hidden rounded-full bg-prism-bg">
-                          <div className="h-full rounded-full bg-gradient-to-r from-prism-teal to-prism-purple" style={{ width: `${Math.max((row.prices_submitted / maxRegionSubmissions) * 100, row.prices_submitted ? 3 : 0)}%` }} />
+                          <div className="h-full rounded-full bg-gradient-to-r from-prism-teal to-prism-purple" style={{ width: `${Math.max((row.prices_submitted / maxPrimarySubmissions) * 100, row.prices_submitted ? 3 : 0)}%` }} />
                         </div>
                       </button>
                     ))}
@@ -230,7 +248,7 @@ export default function DashboardPage() {
                     <p className="mt-1 text-xs text-prism-muted">Switch level or click a row to move deeper.</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {(["regions", "districts", "markets", "users"] as Level[]).map((item) => (
+                    {drillLevels.map((item) => (
                       <button key={item} onClick={() => setLevel(item)} className={`rounded-full px-4 py-2 text-xs font-bold capitalize transition ${level === item ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
                         {item}
                       </button>
@@ -240,10 +258,14 @@ export default function DashboardPage() {
 
                 {level !== "regions" && (
                   <div className="flex flex-wrap gap-3 border-b border-prism-border/60 bg-slate-50/70 px-5 py-4">
-                    <select value={regionId} onChange={(event) => { setRegionId(event.target.value); setDistrictId("all"); setMarketId("all"); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
-                      <option value="all">All regions</option>
-                      {overview.submissions.regions.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
-                    </select>
+                    {isRegional ? (
+                      <span className="rounded-xl border border-prism-teal/30 bg-prism-teal/10 px-3 py-2 text-xs font-bold text-teal-800">{overview.scope.region_name || "Assigned region"}</span>
+                    ) : (
+                      <select value={regionId} onChange={(event) => { setRegionId(event.target.value); setDistrictId("all"); setMarketId("all"); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
+                        <option value="all">All regions</option>
+                        {overview.submissions.regions.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
+                      </select>
+                    )}
                     {(level === "markets" || level === "users") && (
                       <select value={districtId} onChange={(event) => { setDistrictId(event.target.value); setMarketId("all"); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
                         <option value="all">All districts</option>

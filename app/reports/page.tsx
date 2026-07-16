@@ -14,6 +14,12 @@ type FilterOption = {
 };
 
 type Report = {
+  scope: {
+    level: "NATIONAL" | "REGION";
+    role: string;
+    region_id: string | null;
+    region_name: string | null;
+  };
   summary: {
     prices_submitted: number;
     items_priced: number;
@@ -106,6 +112,7 @@ export default function ReportsPage() {
 
 function ReportContent({ report }: { report: Report }) {
   const s = report.summary;
+  const isRegional = report.scope.level === "REGION";
   const quality = [
     { label: "Markets reporting", value: s.markets_reporting, total: s.total_markets, note: "Markets with at least one initial price." },
     { label: "Readers reporting", value: s.readers_reporting, total: s.active_readers, note: "Active readers who have submitted prices." },
@@ -114,6 +121,7 @@ function ReportContent({ report }: { report: Report }) {
 
   return (
     <>
+      {isRegional && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Regional view · {report.scope.region_name || "Assigned region"} · All report totals and records are restricted to this region.</div>}
       <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Prices submitted" value={integer.format(s.prices_submitted)} detail={`Latest ${date(s.last_submission_at)}`} color="teal" />
         <SummaryCard label="Products priced" value={`${integer.format(s.products_priced)} / ${integer.format(s.active_products)}`} detail={`${pct(s.products_priced, s.active_products)}% product coverage`} color="purple" />
@@ -269,7 +277,11 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
     let active = true;
     fetch("/api/auth/me", { cache: "no-store" })
       .then((response) => response.json().catch(() => null))
-      .then((body) => { if (active && body?.user?.role) setRole(body.user.role); })
+      .then((body) => {
+        if (!active || !body?.user?.role) return;
+        setRole(body.user.role);
+        if (body.user.role === "REGIONAL_STATISTICIAN" && body.user.region_id) setRegionId(body.user.region_id);
+      })
       .catch(() => {});
     return () => { active = false; };
   }, []);
@@ -402,7 +414,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
         </div>
         {exportError && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">{exportError}</p>}
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
-          <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setUserId(""); resetPage(); }} options={filters.regions} />
+          <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setUserId(""); resetPage(); }} options={filters.regions} disabled={isRs} />
           <FilterSelect label="District" value={districtId} onChange={(value) => { setDistrictId(value); setMarketId(""); setUserId(""); resetPage(); }} options={districts} />
           <FilterSelect label="Market" value={marketId} onChange={(value) => { setMarketId(value); setUserId(""); resetPage(); }} options={markets} />
           <FilterSelect label="Market reader" value={userId} onChange={(value) => { setUserId(value); resetPage(); }} options={users} />
@@ -465,12 +477,12 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
   );
 }
 
-function FilterSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: FilterOption[] }) {
+function FilterSelect({ label, value, onChange, options, disabled = false }: { label: string; value: string; onChange: (value: string) => void; options: FilterOption[]; disabled?: boolean }) {
   return (
     <div>
       <span className="text-[10px] font-bold uppercase tracking-wider text-prism-muted">{label}</span>
       <div className="mt-1">
-        <SearchableSelect value={value} onChange={onChange} placeholder={`All ${label.toLowerCase()}s`} options={options.map((option) => ({ value: option.id, label: option.name }))} />
+        <SearchableSelect value={value} onChange={onChange} placeholder={`All ${label.toLowerCase()}s`} options={options.map((option) => ({ value: option.id, label: option.name }))} disabled={disabled} />
       </div>
     </div>
   );
@@ -630,12 +642,11 @@ type ItemGapRow = {
   item_id: string;
   item_code: string;
   item_name: string;
-  market_id: string;
-  market_name: string;
-  district_id: string;
-  district_name: string;
-  region_id: string;
-  region_name: string;
+  expected_markets: number;
+  markets_priced: number;
+  markets_at_target: number;
+  markets_with_gap: number;
+  markets_never_priced: number;
   times_priced: number;
 };
 
@@ -652,6 +663,24 @@ function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
   const [appliedSearch, setAppliedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [isRegionalStatistician, setIsRegionalStatistician] = useState(false);
+  const [assignedRegionId, setAssignedRegionId] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/auth/me", { cache: "no-store" })
+      .then((response) => response.json().catch(() => null))
+      .then((body) => {
+        if (!active || body?.user?.role !== "REGIONAL_STATISTICIAN") return;
+        const ownRegionId = String(body.user.region_id || "");
+        setIsRegionalStatistician(true);
+        setAssignedRegionId(ownRegionId);
+        setRegionId(ownRegionId);
+        setPage(1);
+      })
+      .catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -666,6 +695,14 @@ function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
 
   const districts = useMemo(() => filters.districts.filter((row) => !regionId || row.region_id === regionId), [filters.districts, regionId]);
   const markets = useMemo(() => filters.markets.filter((row) => (!regionId || row.region_id === regionId) && (!districtId || row.district_id === districtId)), [filters.markets, regionId, districtId]);
+  const availableRegions = useMemo(() => isRegionalStatistician ? filters.regions.filter((row) => row.id === assignedRegionId) : filters.regions, [filters.regions, isRegionalStatistician, assignedRegionId]);
+  const scopeLabel = marketId
+    ? filters.markets.find((row) => row.id === marketId)?.name || "Selected market"
+    : districtId
+      ? filters.districts.find((row) => row.id === districtId)?.name || "Selected district"
+      : regionId
+        ? filters.regions.find((row) => row.id === regionId)?.name || "Selected region"
+        : "National";
 
   useEffect(() => {
     let active = true;
@@ -697,16 +734,17 @@ function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
     <section className="mt-8 overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
       <div className="border-b border-prism-border/70 p-5">
         <h2 className="text-base font-black text-prism-text">Item pricing gaps</h2>
-        <p className="mt-1 text-xs text-prism-muted">Items that have not been priced at all, or priced fewer than 3 times, in each market.</p>
+        <p className="mt-1 text-xs text-prism-muted">Each item appears once for the selected scope. The national view summarises market coverage across the country; use the filters for regional drill-down.</p>
         {summary && (
           <div className="mt-4 flex flex-wrap gap-2">
-            <span className="rounded-full bg-red-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-700">{integer.format(summary.items_never_priced)} items never priced anywhere</span>
+            <span className="rounded-full bg-purple-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-prism-purple">{scopeLabel} view</span>
+            <span className="rounded-full bg-red-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-red-700">{integer.format(summary.items_never_priced)} items never priced in scope</span>
             <span className="rounded-full bg-amber-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-amber-700">{integer.format(summary.never_priced_pairs)} item–market pairs with no price</span>
-            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-600">{integer.format(total)} gaps under 3 prices</span>
+            <span className="rounded-full bg-slate-100 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-600">{integer.format(total)} items with a pricing gap</span>
           </div>
         )}
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setPage(1); }} options={filters.regions} />
+          <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setPage(1); }} options={availableRegions} disabled={isRegionalStatistician} />
           <FilterSelect label="District" value={districtId} onChange={(value) => { setDistrictId(value); setMarketId(""); setPage(1); }} options={districts} />
           <FilterSelect label="Market" value={marketId} onChange={(value) => { setMarketId(value); setPage(1); }} options={markets} />
           <div>
@@ -718,11 +756,11 @@ function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
       {error && <p className="m-5 rounded-xl bg-red-50 p-3 text-xs text-red-700">{error}</p>}
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-xs">
-          <thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr><th className="px-5 py-3 text-right">S/N</th><th className="px-5 py-3">Item</th><th className="px-5 py-3">Region / District / Market</th><th className="px-5 py-3 text-right">Times priced</th><th className="px-5 py-3">Status</th></tr></thead>
-          <tbody className={loading ? "opacity-50" : ""}>{rows.map((row, index) => <tr key={`${row.item_id}-${row.market_id}`} className="border-t border-prism-border/60"><td className="px-5 py-4 text-right text-prism-muted">{(page - 1) * 10 + index + 1}</td><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.item_name}</p><p className="text-[10px] text-prism-muted">{row.item_code}</p></td><td className="px-5 py-4 text-prism-muted"><p>{row.region_name}</p><p className="text-[10px]">{row.district_name} · {row.market_name}</p></td><td className="px-5 py-4 text-right font-black text-prism-text">{row.times_priced}</td><td className="px-5 py-4"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-bold uppercase ${row.times_priced === 0 ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{row.times_priced === 0 ? "Never priced" : `Only ${row.times_priced}×`}</span></td></tr>)}{!loading && !rows.length && <tr><td colSpan={5} className="px-5 py-10 text-center text-prism-muted">No pricing gaps match the filters.</td></tr>}</tbody>
+          <thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr><th className="px-5 py-3 text-right">S/N</th><th className="px-5 py-3">Item</th><th className="px-5 py-3">Scope</th><th className="px-5 py-3 text-right">Markets priced</th><th className="px-5 py-3 text-right">Markets at 3+</th><th className="px-5 py-3 text-right">Total prices</th><th className="px-5 py-3">Status</th></tr></thead>
+          <tbody className={loading ? "opacity-50" : ""}>{rows.map((row, index) => <tr key={row.item_id} className="border-t border-prism-border/60"><td className="px-5 py-4 text-right text-prism-muted">{(page - 1) * 10 + index + 1}</td><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.item_name}</p><p className="text-[10px] text-prism-muted">{row.item_code}</p></td><td className="px-5 py-4 font-semibold text-prism-text">{scopeLabel}</td><td className="px-5 py-4 text-right"><span className="font-black text-prism-purple">{row.markets_priced}</span><span className="text-prism-muted"> / {row.expected_markets}</span></td><td className="px-5 py-4 text-right font-bold text-prism-text">{row.markets_at_target}</td><td className="px-5 py-4 text-right font-black text-prism-text">{row.times_priced}</td><td className="px-5 py-4"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-bold uppercase ${row.times_priced === 0 ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{row.times_priced === 0 ? "Never priced in scope" : `${row.markets_with_gap} markets below 3`}</span></td></tr>)}{!loading && !rows.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-prism-muted">No pricing gaps match the filters.</td></tr>}</tbody>
         </table>
       </div>
-      <TablePager page={page} pages={pages} total={total} unit="gaps" onPage={setPage} />
+      <TablePager page={page} pages={pages} total={total} unit="items" onPage={setPage} />
     </section>
   );
 }

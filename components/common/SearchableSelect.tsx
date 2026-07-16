@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 export type SearchableOption = { value: string; label: string; hint?: string };
 
-export function SearchableSelect({ value, onChange, options, placeholder }: {
+export function SearchableSelect({ value, onChange, options, placeholder, disabled = false }: {
   value: string;
   onChange: (value: string) => void;
   options: SearchableOption[];
   placeholder: string;
+  disabled?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -40,15 +41,16 @@ export function SearchableSelect({ value, onChange, options, placeholder }: {
       <input
         value={open ? query : selected?.label ?? ""}
         placeholder={selected ? selected.label : placeholder}
-        onFocus={() => { setOpen(true); setQuery(""); }}
+        disabled={disabled}
+        onFocus={() => { if (!disabled) { setOpen(true); setQuery(""); } }}
         onChange={(event) => { setQuery(event.target.value); setOpen(true); }}
         onKeyDown={(event) => {
           if (event.key === "Escape") { setOpen(false); setQuery(""); }
           if (event.key === "Enter") { event.preventDefault(); if (filtered.length === 1) choose(filtered[0].value); }
         }}
-        className="w-full rounded-xl border border-prism-border bg-white px-3 py-2 pr-8 text-xs"
+        className="w-full rounded-xl border border-prism-border bg-white px-3 py-2 pr-8 text-xs disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-prism-muted"
       />
-      {value && !open && (
+      {value && !open && !disabled && (
         <button type="button" onClick={() => choose("")} aria-label="Clear filter" className="absolute inset-y-0 right-2 text-sm text-prism-muted hover:text-prism-text">×</button>
       )}
       {open && (

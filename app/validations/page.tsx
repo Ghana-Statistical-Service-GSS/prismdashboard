@@ -31,6 +31,12 @@ type GapRow = {
 type ItemOption = { id: string; code: string; name: string };
 
 type ValidationData = {
+  scope: {
+    level: "NATIONAL" | "REGION";
+    role: string;
+    region_id: string | null;
+    region_name: string | null;
+  };
   market_gaps: Record<Level, GapRow[]>;
   reader_gaps: Record<ReaderLevel, GapRow[]>;
   filters: { items: ItemOption[]; uoms: string[] };
@@ -107,17 +113,18 @@ export default function ValidationsPage() {
 }
 
 function ValidationContent({ data }: { data: ValidationData }) {
+  const isRegional = data.scope.level === "REGION";
   return (
     <>
       <section className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <Metric label="Regions with missing markets" value={data.market_gaps.regions.length} tone="pink" />
+        <Metric label={isRegional ? "Assigned region" : "Regions with missing markets"} value={isRegional ? 1 : data.market_gaps.regions.length} tone="pink" />
         <Metric label="Districts without prices" value={data.market_gaps.districts.length} tone="pink" />
         <Metric label="Markets without prices" value={data.market_gaps.markets.length} tone="purple" />
         <Metric label="Readers without submissions" value={data.reader_gaps.readers.length} tone="teal" />
       </section>
 
-      <MarketGapTable regions={data.market_gaps.regions} markets={data.market_gaps.markets} />
-      <ReaderGapTable regions={data.reader_gaps.regions} readers={data.reader_gaps.readers} />
+      <MarketGapTable regions={data.market_gaps.regions} markets={data.market_gaps.markets} scopeRegionId={data.scope.region_id} scopeRegionName={data.scope.region_name} />
+      <ReaderGapTable regions={data.reader_gaps.regions} readers={data.reader_gaps.readers} scopeRegionId={data.scope.region_id} scopeRegionName={data.scope.region_name} />
       <ComparisonTable items={data.filters.items} uoms={data.filters.uoms ?? []} />
     </>
   );
@@ -144,8 +151,8 @@ function useSortedRows(rows: GapRow[]) {
   return { sorted, sort };
 }
 
-function MarketGapTable({ regions, markets }: { regions: GapRow[]; markets: GapRow[] }) {
-  const [regionId, setRegionId] = useState<string | null>(null);
+function MarketGapTable({ regions, markets, scopeRegionId, scopeRegionName }: { regions: GapRow[]; markets: GapRow[]; scopeRegionId: string | null; scopeRegionName: string | null }) {
+  const [regionId, setRegionId] = useState<string | null>(scopeRegionId);
   const [national, setNational] = useState(false);
   const [filterRegionId, setFilterRegionId] = useState("");
   const [filterMarketId, setFilterMarketId] = useState("");
@@ -157,9 +164,10 @@ function MarketGapTable({ regions, markets }: { regions: GapRow[]; markets: GapR
   const pages = Math.max(Math.ceil(sorted.length / 10), 1);
   const visible = sorted.slice((page - 1) * 10, page * 10);
   const selectedRegion = regions.find((row) => row.id === regionId);
+  const selectedRegionName = selectedRegion?.name || (scopeRegionId === regionId ? scopeRegionName : null);
   return (
     <section className="mt-8 overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-prism-border/70 p-5 md:flex-row md:items-center md:justify-between"><div><h2 className="text-base font-black text-prism-text">Markets without initial prices</h2><p className="mt-1 text-xs text-prism-muted">{selectedRegion ? `${selectedRegion.name}: districts and their one-to-one markets without prices.` : national ? "All markets without initial prices nationwide." : "Select a region or open the national markets view."}</p></div><div className="flex gap-2">{selectedRegion && <button onClick={() => { setRegionId(null); setPage(1); }} className="rounded-full bg-prism-bg px-4 py-2 text-xs font-bold text-prism-purple">← All regions</button>}{!selectedRegion && <><button onClick={() => { setNational(false); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${!national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>Regional summary</button><button onClick={() => { setNational(true); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>National markets</button></>}</div></div>
+      <div className="flex flex-col gap-4 border-b border-prism-border/70 p-5 md:flex-row md:items-center md:justify-between"><div><h2 className="text-base font-black text-prism-text">Markets without initial prices</h2><p className="mt-1 text-xs text-prism-muted">{selectedRegionName ? `${selectedRegionName}: districts and their markets without prices.` : national ? "All markets without initial prices nationwide." : "Select a region or open the national markets view."}</p></div><div className="flex gap-2">{selectedRegion && !scopeRegionId && <button onClick={() => { setRegionId(null); setPage(1); }} className="rounded-full bg-prism-bg px-4 py-2 text-xs font-bold text-prism-purple">← All regions</button>}{!selectedRegionName && <><button onClick={() => { setNational(false); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${!national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>Regional summary</button><button onClick={() => { setNational(true); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>National markets</button></>}</div></div>
       {national && !selectedRegion && <div className="grid gap-3 border-b border-prism-border/60 bg-slate-50/60 p-4 md:grid-cols-2 xl:max-w-2xl"><SearchableSelect value={filterRegionId} onChange={(next) => { setFilterRegionId(next); setFilterMarketId(""); setPage(1); }} placeholder="All regions" options={regions.map((row) => ({ value: row.id, label: row.name }))} /><SearchableSelect value={filterMarketId} onChange={(next) => { setFilterMarketId(next); setPage(1); }} placeholder="All districts / markets" options={markets.filter((row) => !filterRegionId || row.region_id === filterRegionId).map((row) => ({ value: row.id, label: `${row.district_name} · ${row.name}` }))} /></div>}
       <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr>{!regionId && !national ? <><SortHead label="Region" onClick={() => sort("name")} /><SortHead label="Markets without prices" right onClick={() => sort("markets_without_prices")} /><th className="px-5 py-3" /></> : <>{national && <SortHead label="Region" onClick={() => sort("region_name")} />}<SortHead label="District" onClick={() => sort("district_name")} /><SortHead label="Market" onClick={() => sort("name")} /><SortHead label="Active outlets" right onClick={() => sort("active_outlets")} /><SortHead label="Assigned readers" right onClick={() => sort("assigned_readers")} /></>}</tr></thead><tbody>{visible.map((row) => !regionId && !national ? <tr key={row.id} className="border-t border-prism-border/60 hover:bg-slate-50"><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.name}</p><p className="text-[10px] text-prism-muted">{row.code}</p></td><td className="px-5 py-4 text-right font-black text-red-600">{row.markets_without_prices}</td><td className="px-5 py-4 text-right"><button onClick={() => { setRegionId(row.id); setNational(false); setPage(1); }} className="rounded-full bg-prism-purple px-3 py-1.5 text-[10px] font-bold text-white">View districts & markets →</button></td></tr> : <tr key={row.id} className="border-t border-prism-border/60 hover:bg-slate-50">{national && <td className="px-5 py-4 text-prism-muted">{row.region_name}</td>}<td className="px-5 py-4 font-semibold text-prism-text">{row.district_name}</td><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.name}</p><p className="text-[10px] text-prism-muted">{row.code}</p></td><td className="px-5 py-4 text-right">{row.active_outlets ?? 0}</td><td className="px-5 py-4 text-right">{row.assigned_readers ?? 0}</td></tr>)}</tbody></table></div>
       <Pager page={page} pages={pages} total={sorted.length} onPage={setPage} />
@@ -167,13 +175,14 @@ function MarketGapTable({ regions, markets }: { regions: GapRow[]; markets: GapR
   );
 }
 
-function ReaderGapTable({ regions, readers }: { regions: GapRow[]; readers: GapRow[] }) {
-  const [regionId, setRegionId] = useState<string | null>(null);
+function ReaderGapTable({ regions, readers, scopeRegionId, scopeRegionName }: { regions: GapRow[]; readers: GapRow[]; scopeRegionId: string | null; scopeRegionName: string | null }) {
+  const [regionId, setRegionId] = useState<string | null>(scopeRegionId);
   const [national, setNational] = useState(false);
   const [filterRegionId, setFilterRegionId] = useState("");
   const [filterMarketId, setFilterMarketId] = useState("");
   const [page, setPage] = useState(1);
   const selectedRegion = regions.find((row) => row.id === regionId);
+  const selectedRegionName = selectedRegion?.name || (scopeRegionId === regionId ? scopeRegionName : null);
   const detailRows = useMemo(() => readers.filter((row) => row.region_id === regionId), [readers, regionId]);
   const nationalRows = useMemo(() => readers.filter((row) => (!filterRegionId || row.region_id === filterRegionId) && (!filterMarketId || row.market_id === filterMarketId)), [readers, filterRegionId, filterMarketId]);
   const source = regionId ? detailRows : national ? nationalRows : regions;
@@ -182,7 +191,7 @@ function ReaderGapTable({ regions, readers }: { regions: GapRow[]; readers: GapR
   const visible = sorted.slice((page - 1) * 10, page * 10);
   return (
     <section className="mt-8 overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
-      <div className="flex flex-col gap-4 border-b border-prism-border/70 p-5 md:flex-row md:items-center md:justify-between"><div><h2 className="text-base font-black text-prism-text">Readers without submissions</h2><p className="mt-1 text-xs text-prism-muted">{selectedRegion ? `${selectedRegion.name}: readers and their district/market assignments.` : national ? "All readers without submissions nationwide." : "Select a region or open the national reader view."}</p></div><div className="flex gap-2">{selectedRegion && <button onClick={() => { setRegionId(null); setPage(1); }} className="rounded-full bg-prism-bg px-4 py-2 text-xs font-bold text-prism-purple">← All regions</button>}{!selectedRegion && <><button onClick={() => { setNational(false); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${!national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>Regional summary</button><button onClick={() => { setNational(true); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>National readers</button></>}</div></div>
+      <div className="flex flex-col gap-4 border-b border-prism-border/70 p-5 md:flex-row md:items-center md:justify-between"><div><h2 className="text-base font-black text-prism-text">Readers without submissions</h2><p className="mt-1 text-xs text-prism-muted">{selectedRegionName ? `${selectedRegionName}: readers and their district/market assignments.` : national ? "All readers without submissions nationwide." : "Select a region or open the national reader view."}</p></div><div className="flex gap-2">{selectedRegion && !scopeRegionId && <button onClick={() => { setRegionId(null); setPage(1); }} className="rounded-full bg-prism-bg px-4 py-2 text-xs font-bold text-prism-purple">← All regions</button>}{!selectedRegionName && <><button onClick={() => { setNational(false); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${!national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>Regional summary</button><button onClick={() => { setNational(true); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${national ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>National readers</button></>}</div></div>
       {national && !selectedRegion && <div className="grid gap-3 border-b border-prism-border/60 bg-slate-50/60 p-4 md:grid-cols-2 xl:max-w-2xl"><SearchableSelect value={filterRegionId} onChange={(next) => { setFilterRegionId(next); setFilterMarketId(""); setPage(1); }} placeholder="All regions" options={regions.map((row) => ({ value: row.id, label: row.name }))} /><SearchableSelect value={filterMarketId} onChange={(next) => { setFilterMarketId(next); setPage(1); }} placeholder="All districts / markets" options={Array.from(new Map(readers.filter((row) => row.market_id && (!filterRegionId || row.region_id === filterRegionId)).map((row) => [row.market_id, row])).values()).map((row) => ({ value: row.market_id!, label: `${row.district_name} · ${row.market_name}` }))} /></div>}
       <div className="overflow-x-auto"><table className="min-w-full text-left text-xs"><thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr>{!regionId && !national ? <><SortHead label="Region" onClick={() => sort("name")} /><SortHead label="Readers without submissions" right onClick={() => sort("readers_without_submissions")} /><th className="px-5 py-3" /></> : <>{national && <SortHead label="Region" onClick={() => sort("region_name")} />}<SortHead label="Reader" onClick={() => sort("name")} /><SortHead label="District" onClick={() => sort("district_name")} /><SortHead label="Market" onClick={() => sort("market_name")} /><SortHead label="Last login" onClick={() => sort("last_login_at")} /></>}</tr></thead><tbody>{visible.map((row) => !regionId && !national ? <tr key={row.id} className="border-t border-prism-border/60 hover:bg-slate-50"><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.name}</p><p className="text-[10px] text-prism-muted">{row.code}</p></td><td className="px-5 py-4 text-right font-black text-red-600">{row.readers_without_submissions}</td><td className="px-5 py-4 text-right"><button onClick={() => { setRegionId(row.id); setNational(false); setPage(1); }} className="rounded-full bg-prism-purple px-3 py-1.5 text-[10px] font-bold text-white">View readers →</button></td></tr> : <tr key={row.id} className="border-t border-prism-border/60 hover:bg-slate-50">{national && <td className="px-5 py-4 text-prism-muted">{row.region_name}</td>}<td className="px-5 py-4 font-bold text-prism-text">{row.name}</td><td className="px-5 py-4 text-prism-muted">{row.district_name}</td><td className="px-5 py-4 text-prism-muted">{row.market_name}</td><td className="px-5 py-4 text-prism-muted">{formatDate(row.last_login_at)}</td></tr>)}</tbody></table></div>
       <Pager page={page} pages={pages} total={sorted.length} onPage={setPage} />
