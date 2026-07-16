@@ -97,6 +97,31 @@ function MetricCard({ label, value, hint, accent = "purple" }: {
   );
 }
 
+function ReaderSubmissionCard({ submitted, active }: { submitted: number; active: number }) {
+  const percentage = active > 0 ? Math.min(Math.round((submitted / active) * 100), 100) : 0;
+  const status = percentage <= 50
+    ? { card: "border-red-700 bg-red-600 text-white", muted: "text-white/80", track: "bg-white/25", fill: "bg-white", label: "Critical" }
+    : percentage <= 79
+      ? { card: "border-yellow-300 bg-yellow-100 text-yellow-950", muted: "text-yellow-800", track: "bg-yellow-200", fill: "bg-yellow-500", label: "Needs attention" }
+      : percentage <= 89
+        ? { card: "border-amber-500 bg-amber-400 text-amber-950", muted: "text-amber-900", track: "bg-white/35", fill: "bg-amber-900", label: "Improving" }
+        : percentage < 100
+          ? { card: "border-emerald-300 bg-emerald-100 text-emerald-950", muted: "text-emerald-800", track: "bg-emerald-200", fill: "bg-emerald-600", label: "Strong" }
+          : { card: "border-emerald-700 bg-emerald-600 text-white", muted: "text-white/80", track: "bg-white/25", fill: "bg-white", label: "Complete" };
+
+  return (
+    <article className={`relative overflow-hidden rounded-3xl border p-5 shadow-sm ${status.card}`}>
+      <div className="flex items-start justify-between gap-3">
+        <p className={`text-[11px] font-bold uppercase tracking-[0.16em] ${status.muted}`}>Readers who submitted</p>
+        <span className="rounded-full bg-white/25 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em]">{percentage === 100 && <span aria-hidden="true">✓ </span>}{status.label}</span>
+      </div>
+      <p className="mt-3 text-3xl font-black tracking-tight">{percentage}%</p>
+      <div className={`mt-3 h-2 overflow-hidden rounded-full ${status.track}`}><div className={`h-full rounded-full ${status.fill}`} style={{ width: `${percentage}%` }} /></div>
+      <p className={`mt-2 text-xs ${status.muted}`}><strong>{number.format(submitted)}</strong> of {number.format(active)} active readers</p>
+    </article>
+  );
+}
+
 export default function DashboardPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [level, setLevel] = useState<Level>("regions");
@@ -193,7 +218,7 @@ export default function DashboardPage() {
                 <MetricCard label={isRegional ? "Districts" : "Regions"} value={isRegional ? overview.summary.districts : overview.summary.regions} hint={isRegional ? `${number.format(overview.summary.markets)} markets in ${overview.scope.region_name || "assigned region"}` : `${number.format(overview.summary.districts)} districts`} />
                 <MetricCard label="Markets" value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
                 <MetricCard label="Outlets created" value={overview.summary.outlets_created} hint={`${number.format(overview.summary.outlets)} currently active`} accent="purple" />
-                <MetricCard label="Readers who submitted" value={overview.summary.readers_reporting} hint={`of ${number.format(overview.summary.active_readers)} active readers`} accent="pink" />
+                <ReaderSubmissionCard submitted={overview.summary.readers_reporting} active={overview.summary.active_readers} />
                 <MetricCard label="Users" value={overview.summary.users} hint="Active system users" accent="pink" />
               </section>
 

@@ -385,15 +385,53 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
       if (districtId) params.set("districtId", districtId);
       if (marketId) params.set("marketId", marketId);
       if (userId) params.set("userId", userId);
+      if (uom) params.set("uom", uom);
       if (uomType) params.set("uomType", uomType);
       if (appliedSearch) params.set("search", appliedSearch);
-      const response = await fetch(`/api/dashboard/validations/initiation/comparisons/export?${params}`, { cache: "no-store" });
+      if (supervisorApproval) params.set("supervisorApproval", supervisorApproval);
+      if (rsApproval) params.set("rsApproval", rsApproval);
+      if (hqApproval) params.set("hqApproval", hqApproval);
+      const response = await fetch(`/api/dashboard/reports/initiation/submissions/export?${params}`, { cache: "no-store" });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || "Unable to export");
       const XLSX = await import("xlsx");
+      const headers = [
+        "Uniques_ID", "SN of outlets in region", "Serial No.", "Region_Name", "Region_Code",
+        "Market_Code", "Market_Number", "Market_Name", "Location", "Outletcode", "Outlet_Name",
+        "Outlet_type", "Urban_rural", "Contact_Number", "Item_Code", "Item_Name", "Brand",
+        "Item_Description", "Poor_nonpoor", "Imp_Local", "COICOP6", "COICOP06", "UoM", "Weight", "Price",
+      ];
+      const exportRows = (body?.rows ?? []).map((row: Record<string, unknown>) => ({
+        "Uniques_ID": row.unique_id ?? "",
+        "SN of outlets in region": row.outlet_region_serial ?? "",
+        "Serial No.": row.legacy_serial_number ?? "",
+        "Region_Name": row.region_name ?? "",
+        "Region_Code": row.region_code ?? "",
+        "Market_Code": row.market_code ?? "",
+        "Market_Number": row.market_number ?? "",
+        "Market_Name": row.market_name ?? "",
+        "Location": row.location ?? "",
+        "Outletcode": row.outlet_code ?? "",
+        "Outlet_Name": row.outlet_name ?? "",
+        "Outlet_type": row.outlet_type ?? "",
+        "Urban_rural": row.urban_rural_code ?? "",
+        "Contact_Number": row.contact_phone ?? "",
+        "Item_Code": row.item_code ?? "",
+        "Item_Name": row.item_name ?? "",
+        "Brand": row.brand ?? "",
+        "Item_Description": row.item_description ?? "",
+        "Poor_nonpoor": row.poor_nonpoor ?? "",
+        "Imp_Local": row.imp_local ?? "",
+        "COICOP6": row.coicop6 ?? "",
+        "COICOP06": row.coicop06 ?? "",
+        "UoM": row.uom ?? "",
+        "Weight": row.weight ?? "",
+        "Price": row.price ?? "",
+      }));
       const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(body.products ?? []), "Products");
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(body.prices ?? []), "Prices");
+      const worksheet = XLSX.utils.json_to_sheet(exportRows, { header: headers });
+      worksheet["!cols"] = headers.map((header) => ({ wch: Math.max(header.length + 2, 14) }));
+      XLSX.utils.book_append_sheet(workbook, worksheet, "Products and Prices");
       XLSX.writeFile(workbook, `prism-products-prices-${new Date().toISOString().slice(0, 10)}.xlsx`);
     } catch (reason) {
       setExportError(reason instanceof Error ? reason.message : "Unable to export");

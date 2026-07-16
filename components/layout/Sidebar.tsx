@@ -29,7 +29,7 @@ const navSections: NavSection[] = [
       { label: "Validations", href: "/validations" },
       { label: "SMS Alerts", href: "/sms", hiddenForRs: true },
       { label: "Photo Album", href: "/photos" },
-      { label: "Assignments", href: "/assignments" },
+      { label: "Assignments", href: "/assignments", hiddenForRs: true },
       { label: "Field Officers", href: "/field-officers" },
     ],
   },

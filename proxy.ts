@@ -3,6 +3,7 @@ import { SESSION_COOKIE } from "@/lib/auth";
 
 const RS_RESTRICTED_PATHS = [
   "/sms",
+  "/assignments",
   "/regions",
   "/districts",
   "/markets",
