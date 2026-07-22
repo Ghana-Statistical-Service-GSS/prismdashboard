@@ -11,13 +11,14 @@ import type { DashboardUser } from "@/lib/auth";
 type NavItem = {
   label: string;
   href?: string;
-  hiddenForRs?: boolean;
+  hiddenForScopedRole?: boolean;
+  hiddenForSupervisor?: boolean;
 };
 
 type NavSection = {
   title: string;
   items: NavItem[];
-  hiddenForRs?: boolean;
+  hiddenForScopedRole?: boolean;
 };
 
 const navSections: NavSection[] = [
@@ -27,27 +28,26 @@ const navSections: NavSection[] = [
       { label: "Dashboard", href: "/dashboard" },
       { label: "Reports", href: "/reports" },
       { label: "Validations", href: "/validations" },
-      { label: "SMS Alerts", href: "/sms", hiddenForRs: true },
+      { label: "SMS Alerts", href: "/sms", hiddenForScopedRole: true },
       { label: "Photo Album", href: "/photos" },
-      { label: "Assignments", href: "/assignments", hiddenForRs: true },
       { label: "Field Officers", href: "/field-officers" },
     ],
   },
   {
     title: "CONFIGURATION",
-    hiddenForRs: true,
     items: [
-      { label: "Regions", href: "/regions" },
-      { label: "Districts", href: "/districts" },
-      { label: "Markets", href: "/markets" },
-      { label: "Outlets", href: "/outlets" },
-      { label: "Items", href: "/items" },
-      { label: "Staff", href: "/staff" },
+      { label: "Assignments", href: "/assignments", hiddenForSupervisor: true },
+      { label: "Regions", href: "/regions", hiddenForScopedRole: true },
+      { label: "Districts", href: "/districts", hiddenForScopedRole: true },
+      { label: "Markets", href: "/markets", hiddenForScopedRole: true },
+      { label: "Outlets", href: "/outlets", hiddenForScopedRole: true },
+      { label: "Items", href: "/items", hiddenForScopedRole: true },
+      { label: "Staff", href: "/staff", hiddenForScopedRole: true },
     ],
   },
   {
     title: "VALIDATE",
-    hiddenForRs: true,
+    hiddenForScopedRole: true,
     items: [
       { label: "Validation", href: "/validation" },
       { label: "Threshold Exception (Price)", href: "/threshold-exception" },
@@ -70,23 +70,26 @@ export function Sidebar() {
     return () => { active = false; };
   }, []);
 
-  const isRs = role === "REGIONAL_STATISTICIAN";
+  const isScopedRole = role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR";
+  const isSupervisor = role === "SUPERVISOR";
   const visibleSections = navSections
-    .filter((section) => !(section.hiddenForRs && (isRs || role === null)))
+    .filter((section) => !(section.hiddenForScopedRole && (isScopedRole || role === null)))
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => !(item.hiddenForRs && (isRs || role === null))),
-    }));
+      items: section.items.filter((item) => !((item.hiddenForScopedRole && (isScopedRole || role === null)) || (item.hiddenForSupervisor && (isSupervisor || role === null)))),
+    }))
+    .filter((section) => section.items.length > 0);
 
   return (
     <aside className="flex h-screen w-64 flex-col border-r border-prism-border bg-white">
       {/* Logo */}
-      <div className="flex items-center gap-3 px-6 py-5 border-b border-prism-border/60">
-        <div className="relative h-10 w-10">
+      <div className="flex items-center gap-2 border-b border-prism-border/60 px-4 py-3">
+        <div className="relative h-20 w-20 shrink-0">
           <Image
-            src="/gss-logo.png"
+            src="/Prism-logo.png"
             fill
-            alt="GSS logo"
+            alt="PRISM-Ghana logo"
+            sizes="80px"
             className="object-contain"
           />
         </div>
@@ -95,7 +98,7 @@ export function Sidebar() {
             PRICE INDEX
           </span>
           <span className="text-lg font-extrabold tracking-tight text-prism-purple">
-            PRISM
+            PRISM-GHANA
           </span>
         </div>
       </div>

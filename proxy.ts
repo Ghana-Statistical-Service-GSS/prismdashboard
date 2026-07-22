@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth";
 
-const RS_RESTRICTED_PATHS = [
+const SCOPED_ROLE_RESTRICTED_PATHS = [
   "/sms",
-  "/assignments",
   "/regions",
   "/districts",
   "/markets",
@@ -14,9 +13,13 @@ const RS_RESTRICTED_PATHS = [
   "/threshold-exception",
   "/missing-prices",
 ];
+const SUPERVISOR_RESTRICTED_PATHS = ["/assignments"];
 
-function isRsRestrictedPath(pathname: string) {
-  return RS_RESTRICTED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+function isScopedRoleRestrictedPath(pathname: string) {
+  return SCOPED_ROLE_RESTRICTED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+function isSupervisorRestrictedPath(pathname: string) {
+  return SUPERVISOR_RESTRICTED_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
 export async function proxy(request: NextRequest) {
@@ -30,14 +33,18 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  if (signedIn && isRsRestrictedPath(request.nextUrl.pathname)) {
+  if (signedIn && (isScopedRoleRestrictedPath(request.nextUrl.pathname) || isSupervisorRestrictedPath(request.nextUrl.pathname))) {
     try {
       const response = await fetch(new URL("/api/auth/me", request.url), {
         headers: { cookie: request.headers.get("cookie") || "" },
         cache: "no-store",
       });
       const body = await response.json().catch(() => null);
-      if (!response.ok || body?.user?.role === "REGIONAL_STATISTICIAN") {
+      const role = body?.user?.role;
+      const denied = !response.ok
+        || (isScopedRoleRestrictedPath(request.nextUrl.pathname) && (role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR"))
+        || (isSupervisorRestrictedPath(request.nextUrl.pathname) && role === "SUPERVISOR");
+      if (denied) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
       }
     } catch {

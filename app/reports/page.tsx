@@ -15,10 +15,11 @@ type FilterOption = {
 
 type Report = {
   scope: {
-    level: "NATIONAL" | "REGION";
+    level: "NATIONAL" | "REGION" | "MARKETS";
     role: string;
     region_id: string | null;
     region_name: string | null;
+    market_ids: string[] | null;
   };
   summary: {
     prices_submitted: number;
@@ -113,6 +114,7 @@ export default function ReportsPage() {
 function ReportContent({ report }: { report: Report }) {
   const s = report.summary;
   const isRegional = report.scope.level === "REGION";
+  const isSupervisor = report.scope.level === "MARKETS";
   const quality = [
     { label: "Markets reporting", value: s.markets_reporting, total: s.total_markets, note: "Markets with at least one initial price." },
     { label: "Readers reporting", value: s.readers_reporting, total: s.active_readers, note: "Active readers who have submitted prices." },
@@ -122,6 +124,7 @@ function ReportContent({ report }: { report: Report }) {
   return (
     <>
       {isRegional && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Regional view · {report.scope.region_name || "Assigned region"} · All report totals and records are restricted to this region.</div>}
+      {isSupervisor && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Supervisor view · All report totals, filters and records are restricted to your assigned markets.</div>}
       <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Prices submitted" value={integer.format(s.prices_submitted)} detail={`Latest ${date(s.last_submission_at)}`} color="teal" />
         <SummaryCard label="Products priced" value={`${integer.format(s.products_priced)} / ${integer.format(s.active_products)}`} detail={`${pct(s.products_priced, s.active_products)}% product coverage`} color="purple" />

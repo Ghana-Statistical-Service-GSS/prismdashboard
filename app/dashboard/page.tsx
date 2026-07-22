@@ -41,10 +41,11 @@ type RankingRow = {
 type Overview = {
   generated_at: string;
   scope: {
-    level: "NATIONAL" | "REGION";
+    level: "NATIONAL" | "REGION" | "MARKETS";
     role: "SUPERVISOR" | "REGIONAL_STATISTICIAN" | "HQ" | "ADMIN";
     region_id: string | null;
     region_name: string | null;
+    market_ids: string[] | null;
   };
   summary: {
     regions: number;
@@ -145,6 +146,8 @@ export default function DashboardPage() {
         if (data.scope.level === "REGION") {
           setLevel("districts");
           setRegionId(data.scope.region_id || "all");
+        } else if (data.scope.level === "MARKETS") {
+          setLevel("markets");
         }
       })
       .catch((reason) => { if (active) setError(reason.message); })
@@ -169,9 +172,18 @@ export default function DashboardPage() {
   }, [overview, regionId]);
 
   const isRegional = overview?.scope.level === "REGION";
-  const primarySubmissionRows = isRegional ? overview?.submissions.districts || [] : overview?.submissions.regions || [];
+  const isSupervisor = overview?.scope.level === "MARKETS";
+  const primarySubmissionRows = isSupervisor
+    ? overview?.submissions.markets || []
+    : isRegional
+      ? overview?.submissions.districts || []
+      : overview?.submissions.regions || [];
   const maxPrimarySubmissions = Math.max(...primarySubmissionRows.map((row) => row.prices_submitted), 1);
-  const drillLevels: Level[] = isRegional ? ["districts", "markets", "users"] : ["regions", "districts", "markets", "users"];
+  const drillLevels: Level[] = isSupervisor
+    ? ["markets", "users"]
+    : isRegional
+      ? ["districts", "markets", "users"]
+      : ["regions", "districts", "markets", "users"];
 
   const drillTo = (nextLevel: Level, row?: SubmissionRow) => {
     if (row?.region_id || level === "regions") setRegionId(row?.region_id || row?.id || "all");
@@ -191,7 +203,9 @@ export default function DashboardPage() {
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-prism-teal">Operations overview</p>
               <h1 className="mt-2 text-3xl font-black tracking-tight text-prism-text md:text-4xl">Market Initiation Dashboard</h1>
               <p className="mt-2 max-w-2xl text-sm text-prism-muted">
-                {isRegional
+                {isSupervisor
+                  ? "Track submitted prices, outlets and Market Readers only within your assigned markets."
+                  : isRegional
                   ? `Track submitted prices across the districts, markets and field users in ${overview?.scope.region_name || "your assigned region"}.`
                   : "Track submitted prices from the national view down to regions, districts, markets and field users."}
               </p>
@@ -215,8 +229,8 @@ export default function DashboardPage() {
                 <MetricCard label="Prices submitted" value={overview.summary.prices_submitted} hint={`Latest: ${formatDate(overview.summary.last_submission_at)}`} accent="teal" />
                 <MetricCard label="Items priced" value={overview.summary.items_priced} hint={`of ${number.format(overview.summary.items)} active items`} />
                 <MetricCard label="Products priced" value={overview.summary.products_priced} hint={`of ${number.format(overview.summary.products)} products`} accent="pink" />
-                <MetricCard label={isRegional ? "Districts" : "Regions"} value={isRegional ? overview.summary.districts : overview.summary.regions} hint={isRegional ? `${number.format(overview.summary.markets)} markets in ${overview.scope.region_name || "assigned region"}` : `${number.format(overview.summary.districts)} districts`} />
-                <MetricCard label="Markets" value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
+                <MetricCard label={isSupervisor || isRegional ? "Districts" : "Regions"} value={isSupervisor || isRegional ? overview.summary.districts : overview.summary.regions} hint={isSupervisor ? `${number.format(overview.summary.regions)} region${overview.summary.regions === 1 ? "" : "s"} represented` : isRegional ? `${number.format(overview.summary.markets)} markets in ${overview.scope.region_name || "assigned region"}` : `${number.format(overview.summary.districts)} districts`} />
+                <MetricCard label={isSupervisor ? "Assigned markets" : "Markets"} value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
                 <MetricCard label="Outlets created" value={overview.summary.outlets_created} hint={`${number.format(overview.summary.outlets)} currently active`} accent="purple" />
                 <ReaderSubmissionCard submitted={overview.summary.readers_reporting} active={overview.summary.active_readers} />
                 <MetricCard label="Users" value={overview.summary.users} hint="Active system users" accent="pink" />
@@ -226,14 +240,14 @@ export default function DashboardPage() {
                 <div className="rounded-3xl border border-prism-border/70 bg-white p-6 shadow-sm">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
-                      <h2 className="text-base font-black text-prism-text">Prices submitted by {isRegional ? "district" : "region"}</h2>
-                      <p className="mt-1 text-xs text-prism-muted">{isRegional ? overview.scope.region_name : "All recorded market-initiation quote submissions"}</p>
+                      <h2 className="text-base font-black text-prism-text">Prices submitted by {isSupervisor ? "assigned market" : isRegional ? "district" : "region"}</h2>
+                      <p className="mt-1 text-xs text-prism-muted">{isSupervisor ? "Only markets assigned to this Supervisor" : isRegional ? overview.scope.region_name : "All recorded market-initiation quote submissions"}</p>
                     </div>
                     <span className="rounded-full bg-prism-teal/10 px-3 py-1.5 text-xs font-bold text-teal-700">Live database</span>
                   </div>
                   <div className="mt-6 space-y-4">
                     {primarySubmissionRows.map((row) => (
-                      <button key={row.id} onClick={() => drillTo(isRegional ? "markets" : "districts", row)} className="group block w-full text-left">
+                      <button key={row.id} onClick={() => drillTo(isSupervisor ? "users" : isRegional ? "markets" : "districts", row)} className="group block w-full text-left">
                         <div className="mb-1.5 flex items-center justify-between gap-4 text-xs">
                           <span className="font-bold text-prism-text group-hover:text-prism-purple">{row.name}</span>
                           <span className="font-black text-prism-purple">{number.format(row.prices_submitted)}</span>
@@ -249,7 +263,7 @@ export default function DashboardPage() {
                 <div className="rounded-3xl bg-prism-purple p-6 text-white shadow-sm">
                   <p className="text-xs font-bold uppercase tracking-[0.18em] text-prism-teal-soft">Initiation footprint</p>
                   <p className="mt-4 text-5xl font-black">{number.format(overview.summary.prices_submitted)}</p>
-                  <p className="mt-1 text-sm text-white/65">prices collected across the system</p>
+                  <p className="mt-1 text-sm text-white/65">prices collected across {isSupervisor ? "your assigned markets" : isRegional ? "your assigned region" : "the system"}</p>
                   <div className="mt-8 grid grid-cols-2 gap-3">
                     {[
                       ["Districts", overview.summary.districts],

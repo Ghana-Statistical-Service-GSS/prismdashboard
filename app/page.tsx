@@ -39,25 +39,26 @@ export default function LoginPage() {
   return (
     <main className="min-h-screen bg-white flex flex-col items-center justify-center">
       <div className="flex flex-col items-center justify-center">
-        <div className="flex items-center gap-20">
-          {/* Left illustration */}
-          <div className="hidden md:block">
+        <div className="flex flex-col items-center gap-10 px-6 md:flex-row md:gap-16 lg:gap-20">
+          {/* PRISM identity */}
+          <div className="w-72 sm:w-80 md:w-[390px]">
             <Image
-              src="/prism-monitor.png"
-              alt="Analytics dashboard illustration"
-              width={360}
-              height={260}
-              className="select-none"
+              src="/Prism-logo.png"
+              alt="PRISM-Ghana — Price Index System Monitor"
+              width={1254}
+              height={1254}
+              sizes="(max-width: 768px) 288px, 390px"
+              className="h-auto w-full select-none object-contain"
               priority
             />
           </div>
 
           {/* Right login block */}
-          <div className="flex flex-col">
-            <h1 className="text-5xl font-extrabold tracking-tight text-black">PRISM</h1>
-            <p className="mb-4 text-2xl font-extrabold text-black">Price Index System Monitor</p>
+          <div className="flex w-full max-w-[360px] flex-col">
+            <h1 className="text-4xl font-extrabold tracking-tight text-black">Sign in to PRISM</h1>
+            <p className="mb-5 mt-1 text-sm font-semibold text-prism-muted">Price Index System Monitor</p>
 
-            <form className="space-y-4 w-[360px]" onSubmit={handleSubmit}>
+            <form className="w-full space-y-4" onSubmit={handleSubmit}>
               {/* Username */}
               <div className="space-y-1">
                 <label
@@ -118,16 +119,6 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Bottom GSS logo */}
-        <div className="mt-16 flex justify-center">
-          <Image
-            src="/gss-logo.png"
-            alt="Ghana Statistical Service"
-            width={110}
-            height={110}
-            className="select-none"
-          />
-        </div>
       </div>
     </main>
   );

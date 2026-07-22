@@ -38,7 +38,7 @@ export function Topbar() {
           alt="Ghana Statistical Service"
           width={50}
           height={50}
-          className="select-none"
+          className="select-none object-contain"
         />
       </div>
 

@@ -1,7 +1,7 @@
 import http from "node:http";
 import https from "node:https";
 
-const BACKEND_URL = (process.env.PRISM_BACKEND_URL || "http://localhost:6000").replace(/\/$/, "");
+const BACKEND_URL = (process.env.PRISM_BACKEND_URL || "http://localhost:6001").replace(/\/$/, "");
 
 export function dashboardBackendUrl(path: string) {
   return `${BACKEND_URL}/api/v1/dashboard${path}`;
@@ -14,9 +14,8 @@ type BackendRequestInit = {
   timeoutMs?: number;
 };
 
-// Node's native fetch follows the browser unsafe-port list and blocks port 6000.
-// The PRISM backend currently uses that port, so server-to-server calls use the
-// lower-level Node HTTP client instead.
+// Server-to-server requests use the Node HTTP client so connection failures and
+// timeouts can be handled consistently by every dashboard API proxy.
 export function dashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
   const url = new URL(dashboardBackendUrl(path));
   const client = url.protocol === "https:" ? https : http;
