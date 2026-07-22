@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth";
+import { dashboardBackendRequest, readBackendResponse } from "@/lib/backend";
 
 const SCOPED_ROLE_RESTRICTED_PATHS = [
   "/sms",
@@ -37,14 +38,13 @@ export async function proxy(request: NextRequest) {
 
   if (signedIn && (isScopedRoleRestrictedPath(request.nextUrl.pathname) || isHqOnlyPath(request.nextUrl.pathname))) {
     try {
-      const response = await fetch(new URL("/api/auth/me", request.url), {
-        headers: { cookie: request.headers.get("cookie") || "" },
-        cache: "no-store",
+      const token = request.cookies.get(SESSION_COOKIE)?.value;
+      const response = await dashboardBackendRequest("/auth/me", {
+        headers: { Authorization: `Bearer ${token}` },
       });
-      const body = await response.json().catch(() => null);
+      const body = await readBackendResponse(response);
       const role = body?.user?.role;
-      const denied = !response.ok
-        || (isScopedRoleRestrictedPath(request.nextUrl.pathname) && (role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR"))
+      const denied = (isScopedRoleRestrictedPath(request.nextUrl.pathname) && (role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR"))
         || (isHqOnlyPath(request.nextUrl.pathname) && role !== "HQ" && role !== "ADMIN");
       if (denied) {
         return NextResponse.redirect(new URL("/dashboard", request.url));
