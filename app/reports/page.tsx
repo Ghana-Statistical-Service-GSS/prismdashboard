@@ -1,3 +1,4 @@
+/* eslint-disable @next/next/no-img-element -- quote photos use short-lived MinIO presigned URLs. */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -187,7 +188,16 @@ type Submission = {
   hq_approved_at: string | null;
   hq_approved_by_name: string | null;
   hq_approval_comment: string | null;
+  photo_count: number;
   created_at: string;
+};
+
+type SubmissionPhoto = {
+  id: string;
+  image_url: string | null;
+  captured_at: string | null;
+  created_at: string;
+  notes: string | null;
 };
 
 const APPROVAL_OPTIONS = [
@@ -206,6 +216,7 @@ function ApprovalBadge({ status, byName, at, comment }: { status: ApprovalStatus
     <div className="max-w-44">
       <span className={`whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-bold uppercase ${config[1]}`}>{config[0]}</span>
       {byName && status !== "PENDING" && <p className="mt-1 whitespace-nowrap text-[9px] text-prism-muted">{byName}</p>}
+      {at && status !== "PENDING" && <p className="mt-0.5 whitespace-nowrap text-[9px] text-prism-muted">{date(at)}</p>}
       {comment && status !== "PENDING" && <p className="mt-1 text-[9px] italic leading-4 text-prism-muted">“{comment}”</p>}
     </div>
   );
@@ -236,6 +247,28 @@ function DecisionCommentModal({ decision, count, comment, onComment, onConfirm, 
   );
 }
 
+function QuotePhotoModal({ submission, onClose }: { submission: Submission; onClose: () => void }) {
+  const [photos, setPhotos] = useState<SubmissionPhoto[]>([]);
+  const [active, setActive] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch(`/api/dashboard/photos?quoteId=${encodeURIComponent(submission.id)}&page=1&pageSize=12&includeFilters=false`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => { const body = await response.json().catch(() => null); if (!response.ok) throw new Error(body?.error?.message || "Unable to load product photos"); return body; })
+      .then((body) => setPhotos(body.rows || []))
+      .catch((reason) => { if (reason.name !== "AbortError") setError(reason.message); })
+      .finally(() => setLoading(false));
+    return () => controller.abort();
+  }, [submission.id]);
+  useEffect(() => { const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); }; document.addEventListener("keydown", close); return () => document.removeEventListener("keydown", close); }, [onClose]);
+  const photo = photos[active];
+  return <div role="dialog" aria-modal="true" aria-label={`${submission.product_name} photos`} onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }} className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4 backdrop-blur-sm"><section className="max-h-[92vh] w-full max-w-5xl overflow-auto rounded-3xl bg-white shadow-2xl"><header className="flex items-start justify-between border-b border-prism-border px-5 py-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.15em] text-prism-teal">Product photo</p><h3 className="mt-1 text-xl font-black text-prism-text">{submission.item_name} · {submission.product_name}</h3><p className="mt-1 text-xs text-prism-muted">{submission.outlet_name} · {submission.market_name} · {money.format(Number(submission.price))}</p></div><button onClick={onClose} aria-label="Close product photo" className="rounded-full bg-prism-bg px-4 py-2 text-lg font-bold text-prism-purple">×</button></header>
+    {loading ? <p className="p-12 text-center text-sm text-prism-muted">Loading product photo…</p> : error ? <p className="m-5 rounded-2xl bg-red-50 p-4 text-sm text-red-700">{error}</p> : !photos.length ? <p className="p-12 text-center text-sm text-prism-muted">No photo was submitted for this product and price.</p> : <div className="grid lg:grid-cols-[1fr_18rem]"><div className="flex min-h-80 items-center justify-center bg-slate-950">{photo?.image_url && !failed ? <img src={photo.image_url} alt={`${submission.item_name} — ${submission.product_name}`} decoding="async" referrerPolicy="no-referrer" onError={() => setFailed(true)} className="max-h-[72vh] w-full object-contain" /> : <p className="p-12 text-center text-sm text-white/70">Photo unavailable from storage</p>}</div><aside className="p-5"><p className="text-xs font-bold text-prism-text">{photos.length} photo{photos.length === 1 ? "" : "s"}</p>{photos.length > 1 && <div className="mt-3 grid grid-cols-3 gap-2">{photos.map((item, index) => <button key={item.id} onClick={() => { setActive(index); setFailed(false); }} className={`aspect-square overflow-hidden rounded-xl border-2 bg-slate-100 ${index === active ? "border-prism-purple" : "border-transparent"}`}>{item.image_url && <img src={item.image_url} alt={`Photo ${index + 1}`} loading="lazy" className="h-full w-full object-cover" />}</button>)}</div>}<dl className="mt-5 space-y-3 text-xs"><div><dt className="font-bold uppercase tracking-wider text-prism-muted">Weight</dt><dd className="mt-1 font-semibold text-prism-text">{submission.weight == null ? "—" : integer.format(Number(submission.weight))} {submission.uom_standard || submission.uom_local || ""}</dd></div><div><dt className="font-bold uppercase tracking-wider text-prism-muted">Market reader</dt><dd className="mt-1 font-semibold text-prism-text">{submission.reader_name}</dd></div>{photo?.notes && <div><dt className="font-bold uppercase tracking-wider text-prism-muted">Description</dt><dd className="mt-1 leading-5 text-prism-text">{photo.notes}</dd></div>}</dl></aside></div>}
+  </section></div>;
+}
+
 function SubmissionTable({ filters }: { filters: Report["filters"] }) {
   const [rows, setRows] = useState<Submission[]>([]);
   const [page, setPage] = useState(1);
@@ -258,6 +291,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
   const [supervisorApproval, setSupervisorApproval] = useState("");
   const [rsApproval, setRsApproval] = useState("");
   const [hqApproval, setHqApproval] = useState("");
+  const [approvalGroup, setApprovalGroup] = useState<"" | "APPROVED" | "UNAPPROVED">("");
   const [selected, setSelected] = useState<string[]>([]);
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState("");
@@ -266,6 +300,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
   const [refreshKey, setRefreshKey] = useState(0);
   const [pendingDecision, setPendingDecision] = useState<{ decision: "APPROVED" | "REJECTED"; quoteIds?: string[]; all?: boolean; count: number } | null>(null);
   const [decisionComment, setDecisionComment] = useState("");
+  const [photoSubmission, setPhotoSubmission] = useState<Submission | null>(null);
 
   const isHq = role === "HQ" || role === "ADMIN";
   const isRs = role === "REGIONAL_STATISTICIAN";
@@ -316,6 +351,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
     if (supervisorApproval) params.set("supervisorApproval", supervisorApproval);
     if (rsApproval) params.set("rsApproval", rsApproval);
     if (hqApproval) params.set("hqApproval", hqApproval);
+    if (approvalGroup) params.set("approvalGroup", approvalGroup);
     if (appliedSearch) params.set("search", appliedSearch);
     fetch(`/api/dashboard/reports/initiation/submissions?${params}`, { cache: "no-store" })
       .then(async (response) => {
@@ -334,7 +370,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
       .catch((reason) => { if (active) setError(reason.message); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [page, effectivePageSize, regionId, districtId, marketId, userId, uom, uomType, supervisorApproval, rsApproval, hqApproval, appliedSearch, refreshKey]);
+  }, [page, effectivePageSize, regionId, districtId, marketId, userId, uom, uomType, supervisorApproval, rsApproval, hqApproval, approvalGroup, appliedSearch, refreshKey]);
 
   const resetPage = () => setPage(1);
 
@@ -360,7 +396,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
       if (comment.trim()) body.comment = comment.trim();
       if (isHq && all) {
         body.all = true;
-        body.filters = { regionId, districtId, marketId, userId, uom, uomType, search: appliedSearch, supervisorApproval, rsApproval, hqApproval };
+        body.filters = { regionId, districtId, marketId, userId, uom, uomType, search: appliedSearch, supervisorApproval, rsApproval, hqApproval, approvalGroup };
       }
       const response = await fetch("/api/dashboard/reports/initiation/submissions/approve", {
         method: "POST",
@@ -394,6 +430,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
       if (supervisorApproval) params.set("supervisorApproval", supervisorApproval);
       if (rsApproval) params.set("rsApproval", rsApproval);
       if (hqApproval) params.set("hqApproval", hqApproval);
+      if (approvalGroup) params.set("approvalGroup", approvalGroup);
       const response = await fetch(`/api/dashboard/reports/initiation/submissions/export?${params}`, { cache: "no-store" });
       const body = await response.json().catch(() => null);
       if (!response.ok) throw new Error(body?.error?.message || "Unable to export");
@@ -454,6 +491,9 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
           <button onClick={exportToExcel} disabled={exporting} className="shrink-0 rounded-full bg-prism-teal px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{exporting ? "Exporting…" : "Export to Excel"}</button>
         </div>
         {exportError && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">{exportError}</p>}
+        <div className="mt-5 flex flex-wrap gap-2" role="tablist" aria-label="Products and Prices approval status">
+          {([{ id: "", label: "All submissions" }, { id: "UNAPPROVED", label: "Unapproved" }, { id: "APPROVED", label: "Approved" }] as const).map((tab) => <button key={tab.id || "all"} role="tab" aria-selected={approvalGroup === tab.id} onClick={() => { setApprovalGroup(tab.id); setSupervisorApproval(""); setRsApproval(""); setHqApproval(""); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${approvalGroup === tab.id ? "bg-prism-purple text-white" : "border border-prism-border bg-white text-prism-muted"}`}>{tab.label}</button>)}
+        </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7">
           <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setUserId(""); resetPage(); }} options={filters.regions} disabled={isRs} />
           <FilterSelect label="District" value={districtId} onChange={(value) => { setDistrictId(value); setMarketId(""); setUserId(""); resetPage(); }} options={districts} />
@@ -491,8 +531,8 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
       {error && <p className="m-5 rounded-xl bg-red-50 p-3 text-xs text-red-700">{error}</p>}
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-xs">
-          <thead className="bg-white text-[10px] uppercase tracking-[0.14em] text-prism-muted"><tr>{canSelect && <th className="px-2 py-2"><input type="checkbox" aria-label="Select page" checked={rows.length > 0 && selected.length === rows.length} onChange={togglePage} /></th>}<th className="px-2.5 py-2 text-right">S/N</th><th className="px-2.5 py-2">Item</th><th className="px-2.5 py-2">Product</th><th className="px-2.5 py-2 text-right">Price</th><th className="px-2.5 py-2 text-right">Weight</th><th className="px-2.5 py-2">Local UOM</th><th className="px-2.5 py-2">Standardized UOM</th><th className="px-2.5 py-2">Type</th><th className="px-2.5 py-2">Region / District / Market</th><th className="px-2.5 py-2">Outlet</th><th className="px-2.5 py-2">Market reader</th><th className="px-2.5 py-2">Supervisor approval</th><th className="px-2.5 py-2">RS approval</th><th className="px-2.5 py-2">HQ approval</th><th className="px-2.5 py-2">Submitted</th>{canApprove && <th className="px-2.5 py-2">Approve</th>}</tr></thead>
-          <tbody className={loading ? "opacity-50" : ""}>{rows.map((row, index) => <tr key={row.id} className="border-t border-prism-border/60 hover:bg-slate-50">{canSelect && <td className="px-2 py-2.5"><input type="checkbox" aria-label={`Select ${row.item_name}`} checked={selected.includes(row.id)} onChange={() => toggleSelect(row.id)} /></td>}<td className="px-2.5 py-2.5 text-right font-bold text-prism-muted">{(page - 1) * effectivePageSize + index + 1}</td><td className="px-2.5 py-2.5"><p className="font-bold text-prism-text">{row.item_name}</p><p className="text-[10px] text-prism-muted">{row.item_code}</p></td><td className="px-2.5 py-2.5 font-semibold text-prism-text">{row.product_name}</td><td className="px-2.5 py-2.5 text-right text-sm font-black text-prism-purple">{money.format(Number(row.price))}</td><td className="px-2.5 py-2.5 text-right font-bold text-prism-text">{row.weight == null ? "—" : integer.format(Number(row.weight))}</td><td className="px-2.5 py-2.5 text-prism-muted">{row.uom_local || "—"}</td><td className="px-2.5 py-2.5 text-prism-muted">{row.uom_standard || "—"}</td><td className="px-2.5 py-2.5"><span className={`rounded-full px-2 py-1 text-[9px] font-bold ${row.uom_type === "LOCAL" ? "bg-amber-50 text-amber-700" : row.uom_type === "STANDARDIZED" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500"}`}>{row.uom_type || "—"}</span></td><td className="px-2.5 py-2.5 text-prism-muted"><p>{row.region_name}</p><p className="text-[10px]">{row.district_name} · {row.market_name}</p></td><td className="px-2.5 py-2.5 text-prism-muted">{row.outlet_name}</td><td className="px-2.5 py-2.5 font-semibold text-prism-text">{row.reader_name}</td><td className="px-2.5 py-2.5"><ApprovalBadge status={row.supervisor_approval} byName={row.supervisor_approved_by_name} at={row.supervisor_approved_at} comment={row.supervisor_approval_comment} /></td><td className="px-2.5 py-2.5"><ApprovalBadge status={row.rs_approval} byName={row.rs_approved_by_name} at={row.rs_approved_at} comment={row.rs_approval_comment} /></td><td className="px-2.5 py-2.5"><ApprovalBadge status={row.hq_approval} byName={row.hq_approved_by_name} at={row.hq_approved_at} comment={row.hq_approval_comment} /></td><td className="whitespace-nowrap px-2.5 py-2.5 text-prism-muted">{date(row.created_at)}</td>{canApprove && <td className="whitespace-nowrap px-2.5 py-2.5"><div className="flex gap-1.5"><button disabled={acting} onClick={() => setPendingDecision({ decision: "APPROVED", quoteIds: [row.id], count: 1 })} className="rounded-full bg-green-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40">Approve</button><button disabled={acting} onClick={() => setPendingDecision({ decision: "REJECTED", quoteIds: [row.id], count: 1 })} className="rounded-full bg-red-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40">Reject</button></div></td>}</tr>)}{!loading && !rows.length && <tr><td colSpan={15 + (canSelect ? 1 : 0) + (canApprove ? 1 : 0)} className="px-2.5 py-12 text-center text-prism-muted">No submissions match these filters.</td></tr>}</tbody>
+          <thead className="bg-white text-[10px] uppercase tracking-[0.14em] text-prism-muted"><tr>{canSelect && <th className="px-2 py-2"><input type="checkbox" aria-label="Select page" checked={rows.length > 0 && selected.length === rows.length} onChange={togglePage} /></th>}<th className="px-2.5 py-2 text-right">S/N</th><th className="px-2.5 py-2">Item</th><th className="px-2.5 py-2">Product</th><th className="px-2.5 py-2">Photo</th><th className="px-2.5 py-2 text-right">Price</th><th className="px-2.5 py-2 text-right">Weight</th><th className="px-2.5 py-2">Local UOM</th><th className="px-2.5 py-2">Standardized UOM</th><th className="px-2.5 py-2">Type</th><th className="px-2.5 py-2">Region / District / Market</th><th className="px-2.5 py-2">Outlet</th><th className="px-2.5 py-2">Market reader</th><th className="px-2.5 py-2">Supervisor approval</th><th className="px-2.5 py-2">RS approval</th><th className="px-2.5 py-2">HQ approval</th><th className="px-2.5 py-2">Submitted</th>{canApprove && <th className="px-2.5 py-2">Approve</th>}</tr></thead>
+          <tbody className={loading ? "opacity-50" : ""}>{rows.map((row, index) => <tr key={row.id} className="border-t border-prism-border/60 hover:bg-slate-50">{canSelect && <td className="px-2 py-2.5"><input type="checkbox" aria-label={`Select ${row.item_name}`} checked={selected.includes(row.id)} onChange={() => toggleSelect(row.id)} /></td>}<td className="px-2.5 py-2.5 text-right font-bold text-prism-muted">{(page - 1) * effectivePageSize + index + 1}</td><td className="px-2.5 py-2.5"><p className="font-bold text-prism-text">{row.item_name}</p><p className="text-[10px] text-prism-muted">{row.item_code}</p></td><td className="px-2.5 py-2.5 font-semibold text-prism-text">{row.product_name}</td><td className="px-2.5 py-2.5">{row.photo_count > 0 ? <button onClick={() => setPhotoSubmission(row)} className="whitespace-nowrap rounded-full border border-prism-teal/40 bg-teal-50 px-3 py-1.5 text-[10px] font-bold text-teal-800">View image{row.photo_count > 1 ? ` (${row.photo_count})` : ""}</button> : <span className="inline-flex whitespace-nowrap rounded-full border border-slate-200 bg-slate-100 px-3 py-1.5 text-[10px] font-bold text-slate-500">No picture</span>}</td><td className="px-2.5 py-2.5 text-right text-sm font-black text-prism-purple">{money.format(Number(row.price))}</td><td className="px-2.5 py-2.5 text-right font-bold text-prism-text">{row.weight == null ? "—" : integer.format(Number(row.weight))}</td><td className="px-2.5 py-2.5 text-prism-muted">{row.uom_local || "—"}</td><td className="px-2.5 py-2.5 text-prism-muted">{row.uom_standard || "—"}</td><td className="px-2.5 py-2.5"><span className={`rounded-full px-2 py-1 text-[9px] font-bold ${row.uom_type === "LOCAL" ? "bg-amber-50 text-amber-700" : row.uom_type === "STANDARDIZED" ? "bg-teal-50 text-teal-700" : "bg-slate-100 text-slate-500"}`}>{row.uom_type || "—"}</span></td><td className="px-2.5 py-2.5 text-prism-muted"><p>{row.region_name}</p><p className="text-[10px]">{row.district_name} · {row.market_name}</p></td><td className="px-2.5 py-2.5 text-prism-muted">{row.outlet_name}</td><td className="px-2.5 py-2.5 font-semibold text-prism-text">{row.reader_name}</td><td className="px-2.5 py-2.5"><ApprovalBadge status={row.supervisor_approval} byName={row.supervisor_approved_by_name} at={row.supervisor_approved_at} comment={row.supervisor_approval_comment} /></td><td className="px-2.5 py-2.5"><ApprovalBadge status={row.rs_approval} byName={row.rs_approved_by_name} at={row.rs_approved_at} comment={row.rs_approval_comment} /></td><td className="px-2.5 py-2.5"><ApprovalBadge status={row.hq_approval} byName={row.hq_approved_by_name} at={row.hq_approved_at} comment={row.hq_approval_comment} /></td><td className="whitespace-nowrap px-2.5 py-2.5 text-prism-muted">{date(row.created_at)}</td>{canApprove && <td className="whitespace-nowrap px-2.5 py-2.5"><div className="flex gap-1.5"><button disabled={acting} onClick={() => setPendingDecision({ decision: "APPROVED", quoteIds: [row.id], count: 1 })} className="rounded-full bg-green-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40">Approve</button><button disabled={acting} onClick={() => setPendingDecision({ decision: "REJECTED", quoteIds: [row.id], count: 1 })} className="rounded-full bg-red-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-40">Reject</button></div></td>}</tr>)}{!loading && !rows.length && <tr><td colSpan={16 + (canSelect ? 1 : 0) + (canApprove ? 1 : 0)} className="px-2.5 py-12 text-center text-prism-muted">No submissions match these filters.</td></tr>}</tbody>
         </table>
       </div>
       <div className="flex flex-col gap-3 border-t border-prism-border/70 p-5 sm:flex-row sm:items-center sm:justify-between">
@@ -514,6 +554,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
           }}
         />
       )}
+      {photoSubmission && <QuotePhotoModal submission={photoSubmission} onClose={() => setPhotoSubmission(null)} />}
     </div>
   );
 }

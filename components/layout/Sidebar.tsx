@@ -19,6 +19,7 @@ type NavSection = {
   title: string;
   items: NavItem[];
   hiddenForScopedRole?: boolean;
+  hqOnly?: boolean;
 };
 
 const navSections: NavSection[] = [
@@ -35,6 +36,7 @@ const navSections: NavSection[] = [
   },
   {
     title: "CONFIGURATION",
+    hqOnly: true,
     items: [
       { label: "Assignments", href: "/assignments", hiddenForSupervisor: true },
       { label: "Regions", href: "/regions", hiddenForScopedRole: true },
@@ -72,8 +74,9 @@ export function Sidebar() {
 
   const isScopedRole = role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR";
   const isSupervisor = role === "SUPERVISOR";
+  const isHq = role === "HQ" || role === "ADMIN";
   const visibleSections = navSections
-    .filter((section) => !(section.hiddenForScopedRole && (isScopedRole || role === null)))
+    .filter((section) => !(section.hiddenForScopedRole && (isScopedRole || role === null)) && !(section.hqOnly && !isHq))
     .map((section) => ({
       ...section,
       items: section.items.filter((item) => !((item.hiddenForScopedRole && (isScopedRole || role === null)) || (item.hiddenForSupervisor && (isSupervisor || role === null)))),

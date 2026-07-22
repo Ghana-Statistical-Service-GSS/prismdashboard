@@ -1,0 +1,13 @@
+services:
+  dashboard:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: prism-dashboard:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Read from the .env file next to this compose file (see .env.example).
+      # Falls back to the local backend port if .env doesn't set it.
+      PRISM_BACKEND_URL: ${PRISM_BACKEND_URL:-http://localhost:6001}

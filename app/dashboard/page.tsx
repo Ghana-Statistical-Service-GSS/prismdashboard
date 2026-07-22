@@ -23,9 +23,13 @@ type SubmissionRow = {
   prices_submitted: number;
   items_priced: number;
   products_priced: number;
+  active_readers?: number;
+  readers_reporting?: number;
   submitting_users?: number;
   last_submission_at: string | null;
 };
+
+type BreakdownMetric = "items" | "products" | "readers";
 
 type RankingRow = {
   id: string;
@@ -77,11 +81,17 @@ function formatDate(value: string | null) {
   }).format(new Date(value));
 }
 
-function MetricCard({ label, value, hint, accent = "purple" }: {
+function completionPercentage(completed: number, available: number) {
+  return available > 0 ? Math.min((completed / available) * 100, 100) : 0;
+}
+
+function MetricCard({ label, value, hint, accent = "purple", percentage, onBreakdown }: {
   label: string;
   value: number;
   hint: string;
   accent?: "purple" | "teal" | "pink";
+  percentage?: number;
+  onBreakdown?: () => void;
 }) {
   const colors = {
     purple: "bg-prism-purple",
@@ -91,14 +101,31 @@ function MetricCard({ label, value, hint, accent = "purple" }: {
   return (
     <article className="relative overflow-hidden rounded-3xl border border-prism-border/70 bg-white p-5 shadow-sm">
       <span className={`absolute left-0 top-0 h-full w-1.5 ${colors[accent]}`} />
-      <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-prism-muted">{label}</p>
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-prism-muted">{label}</p>
+        {percentage !== undefined && (
+          <span className={`shrink-0 rounded-full px-2.5 py-1 text-[10px] font-black ${percentage < 50 ? "bg-red-100 text-red-700" : percentage < 80 ? "bg-yellow-100 text-yellow-800" : percentage < 100 ? "bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white"}`}>
+            {percentage.toFixed(1)}%
+          </span>
+        )}
+      </div>
       <p className="mt-3 text-3xl font-black tracking-tight text-prism-text">{number.format(value)}</p>
       <p className="mt-1 text-xs text-prism-muted">{hint}</p>
+      {percentage !== undefined && (
+        <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-prism-bg">
+          <div className={`h-full rounded-full ${percentage < 50 ? "bg-red-500" : percentage < 80 ? "bg-yellow-500" : "bg-emerald-500"}`} style={{ width: `${percentage}%` }} />
+        </div>
+      )}
+      {onBreakdown && (
+        <button type="button" onClick={onBreakdown} className="mt-4 rounded-full bg-prism-bg px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] text-prism-purple transition hover:bg-prism-purple hover:text-white">
+          View breakdown
+        </button>
+      )}
     </article>
   );
 }
 
-function ReaderSubmissionCard({ submitted, active }: { submitted: number; active: number }) {
+function ReaderSubmissionCard({ submitted, active, onBreakdown }: { submitted: number; active: number; onBreakdown: () => void }) {
   const percentage = active > 0 ? Math.min(Math.round((submitted / active) * 100), 100) : 0;
   const status = percentage <= 50
     ? { card: "border-red-700 bg-red-600 text-white", muted: "text-white/80", track: "bg-white/25", fill: "bg-white", label: "Critical" }
@@ -119,7 +146,98 @@ function ReaderSubmissionCard({ submitted, active }: { submitted: number; active
       <p className="mt-3 text-3xl font-black tracking-tight">{percentage}%</p>
       <div className={`mt-3 h-2 overflow-hidden rounded-full ${status.track}`}><div className={`h-full rounded-full ${status.fill}`} style={{ width: `${percentage}%` }} /></div>
       <p className={`mt-2 text-xs ${status.muted}`}><strong>{number.format(submitted)}</strong> of {number.format(active)} active readers</p>
+      <button type="button" onClick={onBreakdown} className="mt-4 rounded-full bg-white/25 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] transition hover:bg-white/40">
+        View breakdown
+      </button>
     </article>
+  );
+}
+
+function BreakdownModal({ metric, rows, scopeLevel, itemTotal, productTotal, onClose }: {
+  metric: BreakdownMetric;
+  rows: SubmissionRow[];
+  scopeLevel: Overview["scope"]["level"];
+  itemTotal: number;
+  productTotal: number;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [onClose]);
+
+  const configuration = {
+    items: { title: "Items priced", noun: "active items" },
+    products: { title: "Products priced", noun: "active products" },
+    readers: { title: "Readers who submitted", noun: "active readers" },
+  }[metric];
+
+  const rankedRows = rows
+    .map((row) => {
+      const completed = metric === "items"
+        ? row.items_priced
+        : metric === "products"
+          ? row.products_priced
+          : row.readers_reporting ?? row.submitting_users ?? 0;
+      const total = metric === "items"
+        ? itemTotal
+        : metric === "products"
+          ? productTotal
+          : row.active_readers || 0;
+      const percentage = completionPercentage(completed, total);
+      return { row, completed, total, percentage };
+    })
+    .sort((a, b) => a.percentage - b.percentage || a.completed - b.completed || a.row.name.localeCompare(b.row.name));
+
+  const levelLabel = scopeLevel === "NATIONAL" ? "Region" : scopeLevel === "REGION" ? "District / market" : "Market";
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="breakdown-title" className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-prism-border/70 px-6 py-5">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-prism-teal">Worst performing first</p>
+            <h2 id="breakdown-title" className="mt-1 text-xl font-black text-prism-text">{configuration.title} by {levelLabel.toLowerCase()}</h2>
+            <p className="mt-1 text-xs text-prism-muted">Each percentage compares the completed number with the available {configuration.noun}.</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close breakdown" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-prism-bg text-lg font-bold text-prism-muted hover:text-prism-text">×</button>
+        </header>
+
+        <div className="overflow-auto">
+          <table className="min-w-full text-left text-xs">
+            <thead className="sticky top-0 bg-slate-50 text-[10px] uppercase tracking-[0.14em] text-prism-muted">
+              <tr>
+                <th className="px-6 py-3">Rank</th>
+                <th className="px-4 py-3">{levelLabel}</th>
+                <th className="px-4 py-3 text-right">Completed</th>
+                <th className="px-4 py-3 text-right">Available</th>
+                <th className="px-6 py-3 text-right">Performance</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rankedRows.map(({ row, completed, total, percentage }, index) => {
+                const tone = percentage < 50 ? "bg-red-100 text-red-700" : percentage < 80 ? "bg-yellow-100 text-yellow-800" : percentage < 100 ? "bg-emerald-100 text-emerald-800" : "bg-emerald-600 text-white";
+                const location = scopeLevel === "REGION" ? row.district_name : row.region_name;
+                return (
+                  <tr key={row.id} className="border-t border-prism-border/60">
+                    <td className="px-6 py-4 font-black text-prism-muted">{index + 1}</td>
+                    <td className="px-4 py-4">
+                      <p className="font-bold text-prism-text">{scopeLevel === "REGION" && row.district_name ? `${row.district_name} / ${row.name}` : row.name}</p>
+                      {scopeLevel !== "REGION" && location && <p className="mt-0.5 text-[10px] text-prism-muted">{location}</p>}
+                    </td>
+                    <td className="px-4 py-4 text-right font-black text-prism-text">{number.format(completed)}</td>
+                    <td className="px-4 py-4 text-right text-prism-muted">{number.format(total)}</td>
+                    <td className="px-6 py-4 text-right"><span className={`inline-flex min-w-16 justify-center rounded-full px-2.5 py-1 font-black ${tone}`}>{percentage.toFixed(1)}%</span></td>
+                  </tr>
+                );
+              })}
+              {!rankedRows.length && <tr><td colSpan={5} className="px-6 py-10 text-center text-prism-muted">No scoped locations are available.</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -131,6 +249,7 @@ export default function DashboardPage() {
   const [marketId, setMarketId] = useState("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [breakdownMetric, setBreakdownMetric] = useState<BreakdownMetric | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -184,6 +303,9 @@ export default function DashboardPage() {
     : isRegional
       ? ["districts", "markets", "users"]
       : ["regions", "districts", "markets", "users"];
+  const breakdownRows = isRegional || isSupervisor
+    ? overview?.submissions.markets || []
+    : overview?.submissions.regions || [];
 
   const drillTo = (nextLevel: Level, row?: SubmissionRow) => {
     if (row?.region_id || level === "regions") setRegionId(row?.region_id || row?.id || "all");
@@ -227,14 +349,25 @@ export default function DashboardPage() {
             <>
               <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
                 <MetricCard label="Prices submitted" value={overview.summary.prices_submitted} hint={`Latest: ${formatDate(overview.summary.last_submission_at)}`} accent="teal" />
-                <MetricCard label="Items priced" value={overview.summary.items_priced} hint={`of ${number.format(overview.summary.items)} active items`} />
-                <MetricCard label="Products priced" value={overview.summary.products_priced} hint={`of ${number.format(overview.summary.products)} products`} accent="pink" />
+                <MetricCard label="Items priced" value={overview.summary.items_priced} hint={`of ${number.format(overview.summary.items)} active items`} percentage={completionPercentage(overview.summary.items_priced, overview.summary.items)} onBreakdown={() => setBreakdownMetric("items")} />
+                <MetricCard label="Products priced" value={overview.summary.products_priced} hint={`of ${number.format(overview.summary.products)} active products`} accent="pink" percentage={completionPercentage(overview.summary.products_priced, overview.summary.products)} onBreakdown={() => setBreakdownMetric("products")} />
                 <MetricCard label={isSupervisor || isRegional ? "Districts" : "Regions"} value={isSupervisor || isRegional ? overview.summary.districts : overview.summary.regions} hint={isSupervisor ? `${number.format(overview.summary.regions)} region${overview.summary.regions === 1 ? "" : "s"} represented` : isRegional ? `${number.format(overview.summary.markets)} markets in ${overview.scope.region_name || "assigned region"}` : `${number.format(overview.summary.districts)} districts`} />
                 <MetricCard label={isSupervisor ? "Assigned markets" : "Markets"} value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
                 <MetricCard label="Outlets created" value={overview.summary.outlets_created} hint={`${number.format(overview.summary.outlets)} currently active`} accent="purple" />
-                <ReaderSubmissionCard submitted={overview.summary.readers_reporting} active={overview.summary.active_readers} />
+                <ReaderSubmissionCard submitted={overview.summary.readers_reporting} active={overview.summary.active_readers} onBreakdown={() => setBreakdownMetric("readers")} />
                 <MetricCard label="Users" value={overview.summary.users} hint="Active system users" accent="pink" />
               </section>
+
+              {breakdownMetric && (
+                <BreakdownModal
+                  metric={breakdownMetric}
+                  rows={breakdownRows}
+                  scopeLevel={overview.scope.level}
+                  itemTotal={overview.summary.items}
+                  productTotal={overview.summary.products}
+                  onClose={() => setBreakdownMetric(null)}
+                />
+              )}
 
               <section className="mt-8 grid gap-6 xl:grid-cols-[1.5fr_1fr]">
                 <div className="rounded-3xl border border-prism-border/70 bg-white p-6 shadow-sm">

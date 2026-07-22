@@ -1,0 +1,16 @@
+node_modules
+.next
+.git
+.claude
+.idea
+.env
+.env.*
+!.env.example
+npm-debug.log*
+*.md
+Note.md
+CLAUDE.md
+GLSS_ITEM_Coding_*.json
+.dockerignore
+Dockerfile
+docker-compose.yml

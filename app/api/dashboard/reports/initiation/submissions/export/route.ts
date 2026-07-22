@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { BackendError, dashboardBackendRequest, readBackendResponse } from "@/lib/backend";
 
-const allowed = ["regionId", "districtId", "marketId", "userId", "uom", "uomType", "search", "supervisorApproval", "rsApproval", "hqApproval"];
+const allowed = ["regionId", "districtId", "marketId", "userId", "uom", "uomType", "search", "supervisorApproval", "rsApproval", "hqApproval", "approvalGroup"];
 
 export async function GET(request: Request) {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
