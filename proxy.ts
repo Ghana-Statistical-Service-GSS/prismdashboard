@@ -4,6 +4,7 @@ import { dashboardBackendRequest, readBackendResponse } from "@/lib/backend";
 
 const SCOPED_ROLE_RESTRICTED_PATHS = [
   "/sms",
+  "/email-alerts",
   "/validation",
   "/threshold-exception",
   "/missing-prices",
