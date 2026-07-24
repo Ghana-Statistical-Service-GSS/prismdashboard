@@ -29,6 +29,13 @@ type GapRow = {
 };
 
 type ItemOption = { id: string; code: string; name: string };
+type CompletenessFilterOption = {
+  id: string;
+  name: string;
+  region_id?: string | null;
+  district_id?: string | null;
+  market_id?: string | null;
+};
 
 type ValidationData = {
   scope: {
@@ -39,7 +46,13 @@ type ValidationData = {
   };
   market_gaps: Record<Level, GapRow[]>;
   reader_gaps: Record<ReaderLevel, GapRow[]>;
-  filters: { items: ItemOption[]; uoms: string[] };
+  filters: {
+    items: ItemOption[];
+    uoms: string[];
+    regions: CompletenessFilterOption[];
+    markets: CompletenessFilterOption[];
+    readers: CompletenessFilterOption[];
+  };
 };
 
 type Comparison = {
@@ -154,7 +167,7 @@ function ValidationContent({ data }: { data: ValidationData }) {
 
       <MarketGapTable regions={data.market_gaps.regions} markets={data.market_gaps.markets} scopeRegionId={data.scope.region_id} scopeRegionName={data.scope.region_name} marketScoped={isSupervisor} />
       <ReaderGapTable regions={data.reader_gaps.regions} readers={data.reader_gaps.readers} scopeRegionId={data.scope.region_id} scopeRegionName={data.scope.region_name} marketScoped={isSupervisor} />
-      <ItemQuoteCompletenessReport scope={data.scope} />
+      <ItemQuoteCompletenessReport scope={data.scope} filters={data.filters} />
       <ComparisonTable items={data.filters.items} uoms={data.filters.uoms ?? []} />
     </>
   );
@@ -240,7 +253,7 @@ function SortHead({ label, onClick, right = false }: { label: string; onClick: (
   return <th className={`px-5 py-3 ${right ? "text-right" : ""}`}><button onClick={onClick} className="font-bold uppercase hover:text-prism-purple">{label} ↕</button></th>;
 }
 
-function ItemQuoteCompletenessReport({ scope }: { scope: ValidationData["scope"] }) {
+function ItemQuoteCompletenessReport({ scope, filters }: { scope: ValidationData["scope"]; filters: ValidationData["filters"] }) {
   const [rows, setRows] = useState<ItemQuoteCompletenessRow[]>([]);
   const [summary, setSummary] = useState<ItemQuoteCompletenessSummary>({
     items: 0,
@@ -258,8 +271,23 @@ function ItemQuoteCompletenessReport({ scope }: { scope: ValidationData["scope"]
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [regionId, setRegionId] = useState("");
+  const [marketId, setMarketId] = useState("");
+  const [userId, setUserId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const canFilterRegion = scope.role === "HQ" || scope.role === "ADMIN";
+  const availableMarkets = useMemo(
+    () => filters.markets.filter((option) => !regionId || option.region_id === regionId),
+    [filters.markets, regionId]
+  );
+  const availableReaders = useMemo(
+    () => filters.readers.filter((option) =>
+      (!regionId || option.region_id === regionId)
+      && (!marketId || option.market_id === marketId)
+    ),
+    [filters.readers, regionId, marketId]
+  );
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -283,6 +311,9 @@ function ItemQuoteCompletenessReport({ scope }: { scope: ValidationData["scope"]
     });
     if (appliedSearch) params.set("search", appliedSearch);
     if (status) params.set("status", status);
+    if (regionId) params.set("regionId", regionId);
+    if (marketId) params.set("marketId", marketId);
+    if (userId) params.set("userId", userId);
 
     fetch(`/api/dashboard/validations/initiation/item-quote-completeness?${params}`, {
       cache: "no-store"
@@ -309,7 +340,7 @@ function ItemQuoteCompletenessReport({ scope }: { scope: ValidationData["scope"]
     return () => {
       active = false;
     };
-  }, [page, pageSize, appliedSearch, status]);
+  }, [page, pageSize, appliedSearch, status, regionId, marketId, userId]);
 
   const scopeDescription = scope.level === "NATIONAL"
     ? "National view across every market."
@@ -348,12 +379,47 @@ function ItemQuoteCompletenessReport({ scope }: { scope: ValidationData["scope"]
         </div>
       </div>
 
-      <div className="flex flex-col gap-3 border-b border-prism-border/60 bg-slate-50/60 p-4 md:flex-row md:items-center">
+      <div className="grid gap-3 border-b border-prism-border/60 bg-slate-50/60 p-4 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-6">
+        {canFilterRegion && (
+          <SearchableSelect
+            value={regionId}
+            onChange={(value) => {
+              setLoading(true);
+              setRegionId(value);
+              setMarketId("");
+              setUserId("");
+              setPage(1);
+            }}
+            placeholder="All regions"
+            options={filters.regions.map((option) => ({ value: option.id, label: option.name }))}
+          />
+        )}
+        <SearchableSelect
+          value={marketId}
+          onChange={(value) => {
+            setLoading(true);
+            setMarketId(value);
+            setUserId("");
+            setPage(1);
+          }}
+          placeholder="All markets"
+          options={availableMarkets.map((option) => ({ value: option.id, label: option.name }))}
+        />
+        <SearchableSelect
+          value={userId}
+          onChange={(value) => {
+            setLoading(true);
+            setUserId(value);
+            setPage(1);
+          }}
+          placeholder="All Market Readers"
+          options={availableReaders.map((option) => ({ value: option.id, label: option.name }))}
+        />
         <input
           value={search}
           onChange={(event) => setSearch(event.target.value)}
           placeholder="Search item name or code…"
-          className="min-w-64 flex-1 rounded-xl border border-prism-border bg-white px-3 py-2.5 text-xs text-prism-text outline-none focus:border-prism-purple"
+          className="rounded-xl border border-prism-border bg-white px-3 py-2.5 text-xs text-prism-text outline-none focus:border-prism-purple"
         />
         <select
           value={status}

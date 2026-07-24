@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { SESSION_COOKIE } from "@/lib/auth";
 import { BackendError, dashboardBackendRequest, readBackendResponse } from "@/lib/backend";
 
-const allowed = ["page", "pageSize", "search", "status"];
+const allowed = ["page", "pageSize", "search", "status", "regionId", "marketId", "userId"];
 
 export async function GET(request: Request) {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
