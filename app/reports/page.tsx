@@ -119,16 +119,16 @@ function ReportContent({ report }: { report: Report }) {
   const quality = [
     { label: "Markets reporting", value: s.markets_reporting, total: s.total_markets, note: "Markets with at least one initial price." },
     { label: "Readers reporting", value: s.readers_reporting, total: s.active_readers, note: "Active readers who have submitted prices." },
-    { label: "Item coverage", value: s.items_priced, total: s.active_items, note: "Active items with at least one initial price." },
+    { label: "Item coverage", value: s.items_priced, total: s.active_items, note: "Active catalogue items with at least one initial price in this scope." },
   ];
 
   return (
     <>
-      {isRegional && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Regional view · {report.scope.region_name || "Assigned region"} · All report totals and records are restricted to this region.</div>}
-      {isSupervisor && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Supervisor view · All report totals, filters and records are restricted to your assigned markets.</div>}
+      {isRegional && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Regional view · {report.scope.region_name || "Assigned region"} · Activity, records and filters are restricted to this region; item and product coverage is measured against the shared active PRISM catalogue.</div>}
+      {isSupervisor && <div className="mt-8 rounded-2xl border border-prism-teal/30 bg-prism-teal/10 px-5 py-4 text-sm font-bold text-teal-900">Supervisor view · Activity, records and filters are restricted to your assigned markets; item and product coverage is measured against the shared active PRISM catalogue.</div>}
       <section className="mt-8 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <SummaryCard label="Prices submitted" value={integer.format(s.prices_submitted)} detail={`Latest ${date(s.last_submission_at)}`} color="teal" />
-        <SummaryCard label="Products priced" value={`${integer.format(s.products_priced)} / ${integer.format(s.active_products)}`} detail={`${pct(s.products_priced, s.active_products)}% product coverage`} color="purple" />
+        <SummaryCard label="Products priced" value={`${integer.format(s.products_priced)} / ${integer.format(s.active_products)}`} detail={`${pct(s.products_priced, s.active_products)}% of active catalogue`} color="purple" />
         <SummaryCard label="Markets reporting" value={`${s.markets_reporting} / ${s.total_markets}`} detail={`${s.total_markets - s.markets_reporting} markets need attention`} color="pink" />
         <SummaryCard label="Readers reporting" value={`${s.readers_reporting} / ${s.active_readers}`} detail={`${s.active_readers - s.readers_reporting} readers have no prices`} color="orange" />
       </section>
@@ -138,11 +138,11 @@ function ReportContent({ report }: { report: Report }) {
       </section>
 
       <section className="mt-8 rounded-3xl border border-prism-border/70 bg-white shadow-sm">
-        <SubmissionTable filters={report.filters} />
+        <SubmissionTable filters={report.filters} scope={report.scope} />
       </section>
 
-      <OutletCoverage filters={report.filters} />
-      <ItemGapsTable filters={report.filters} />
+      <OutletCoverage filters={report.filters} scope={report.scope} />
+      <ItemGapsTable filters={report.filters} scope={report.scope} />
 
     </>
   );
@@ -269,13 +269,13 @@ function QuotePhotoModal({ submission, onClose }: { submission: Submission; onCl
   </section></div>;
 }
 
-function SubmissionTable({ filters }: { filters: Report["filters"] }) {
+function SubmissionTable({ filters, scope }: { filters: Report["filters"]; scope: Report["scope"] }) {
   const [rows, setRows] = useState<Submission[]>([]);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
-  const [regionId, setRegionId] = useState("");
+  const [regionId, setRegionId] = useState(scope.level === "REGION" ? scope.region_id || "" : "");
   const [districtId, setDistrictId] = useState("");
   const [marketId, setMarketId] = useState("");
   const [userId, setUserId] = useState("");
@@ -287,7 +287,7 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState("");
-  const [role, setRole] = useState("");
+  const role = scope.role;
   const [supervisorApproval, setSupervisorApproval] = useState("");
   const [rsApproval, setRsApproval] = useState("");
   const [hqApproval, setHqApproval] = useState("");
@@ -310,19 +310,6 @@ function SubmissionTable({ filters }: { filters: Report["filters"] }) {
   const canApprove = isSupervisor || canSelect;
   // RS approves a page at a time: their page is pinned to 10 rows.
   const effectivePageSize = isRs ? 10 : pageSize;
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((response) => response.json().catch(() => null))
-      .then((body) => {
-        if (!active || !body?.user?.role) return;
-        setRole(body.user.role);
-        if (body.user.role === "REGIONAL_STATISTICIAN" && body.user.region_id) setRegionId(body.user.region_id);
-      })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -603,12 +590,12 @@ type OutletRow = {
   last_submission_at: string | null;
 };
 
-function OutletCoverage({ filters }: { filters: Report["filters"] }) {
+function OutletCoverage({ filters, scope }: { filters: Report["filters"]; scope: Report["scope"] }) {
   const [rows, setRows] = useState<OutletRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [view, setView] = useState<"regions" | "outlets" | "interviewers">("regions");
-  const [regionId, setRegionId] = useState("");
+  const [view, setView] = useState<"areas" | "outlets" | "interviewers">("areas");
+  const [regionId, setRegionId] = useState(scope.level === "REGION" ? scope.region_id || "" : "");
   const [districtId, setDistrictId] = useState("");
   const [marketId, setMarketId] = useState("");
   const [search, setSearch] = useState("");
@@ -640,19 +627,25 @@ function OutletCoverage({ filters }: { filters: Report["filters"] }) {
       (!needle || row.outlet_name.toLowerCase().includes(needle) || (row.created_by_name ?? "").toLowerCase().includes(needle) || row.market_name.toLowerCase().includes(needle)));
   }, [rows, regionId, districtId, marketId, search]);
 
-  const regionSummary = useMemo(() => {
+  const areaSummary = useMemo(() => {
     const map = new Map<string, { name: string; outlets: number; districts: Set<string>; markets: Set<string>; interviewers: Set<string>; prices: number }>();
     for (const row of filtered) {
-      const entry = map.get(row.region_id) ?? { name: row.region_name, outlets: 0, districts: new Set<string>(), markets: new Set<string>(), interviewers: new Set<string>(), prices: 0 };
+      const key = scope.level === "NATIONAL" ? row.region_id : scope.level === "REGION" ? `${row.district_id}:${row.market_id}` : row.market_id;
+      const name = scope.level === "NATIONAL"
+        ? row.region_name
+        : scope.level === "REGION"
+          ? `${row.district_name} · ${row.market_name}`
+          : row.market_name;
+      const entry = map.get(key) ?? { name, outlets: 0, districts: new Set<string>(), markets: new Set<string>(), interviewers: new Set<string>(), prices: 0 };
       entry.outlets += 1;
       entry.districts.add(row.district_id);
       entry.markets.add(row.market_id);
       if (row.created_by) entry.interviewers.add(row.created_by);
       entry.prices += row.prices_submitted;
-      map.set(row.region_id, entry);
+      map.set(key, entry);
     }
     return [...map.values()].sort((a, b) => b.outlets - a.outlets);
-  }, [filtered]);
+  }, [filtered, scope.level]);
 
   const interviewerSummary = useMemo(() => {
     const map = new Map<string, { name: string; outlets: number; regions: Set<string>; markets: Set<string>; latest: string }>();
@@ -672,10 +665,11 @@ function OutletCoverage({ filters }: { filters: Report["filters"] }) {
   const visibleOutlets = filtered.slice((page - 1) * 10, page * 10);
 
   const tabs: { key: typeof view; label: string }[] = [
-    { key: "regions", label: "By region" },
+    { key: "areas", label: scope.level === "NATIONAL" ? "By region" : scope.level === "REGION" ? "By district / market" : "By market" },
     { key: "outlets", label: "By outlet" },
     { key: "interviewers", label: "By interviewer" },
   ];
+  const areaLabel = scope.level === "NATIONAL" ? "Region" : scope.level === "REGION" ? "District / Market" : "Market";
 
   return (
     <section className="mt-8 overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
@@ -685,7 +679,7 @@ function OutletCoverage({ filters }: { filters: Report["filters"] }) {
           <div className="flex gap-2">{tabs.map((tab) => <button key={tab.key} onClick={() => { setView(tab.key); setPage(1); }} className={`rounded-full px-4 py-2 text-xs font-bold ${view === tab.key ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-purple"}`}>{tab.label}</button>)}</div>
         </div>
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setPage(1); }} options={filters.regions} />
+          <FilterSelect label="Region" value={regionId} onChange={(value) => { setRegionId(value); setDistrictId(""); setMarketId(""); setPage(1); }} options={filters.regions} disabled={scope.level === "REGION"} />
           <FilterSelect label="District" value={districtId} onChange={(value) => { setDistrictId(value); setMarketId(""); setPage(1); }} options={districts} />
           <FilterSelect label="Market" value={marketId} onChange={(value) => { setMarketId(value); setPage(1); }} options={markets} />
           <div>
@@ -696,10 +690,10 @@ function OutletCoverage({ filters }: { filters: Report["filters"] }) {
       </div>
       {error && <p className="m-5 rounded-xl bg-red-50 p-3 text-xs text-red-700">{error}</p>}
       <div className="overflow-x-auto">
-        {view === "regions" && (
+        {view === "areas" && (
           <table className="min-w-full text-left text-xs">
-            <thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr><th className="px-5 py-3 text-right">S/N</th><th className="px-5 py-3">Region</th><th className="px-5 py-3 text-right">Outlets created</th><th className="px-5 py-3 text-right">Districts</th><th className="px-5 py-3 text-right">Markets</th><th className="px-5 py-3 text-right">Interviewers</th><th className="px-5 py-3 text-right">Prices submitted</th></tr></thead>
-            <tbody className={loading ? "opacity-50" : ""}>{regionSummary.map((row, index) => <tr key={row.name} className="border-t border-prism-border/60"><td className="px-5 py-4 text-right text-prism-muted">{index + 1}</td><td className="px-5 py-4 font-bold text-prism-text">{row.name}</td><td className="px-5 py-4 text-right font-black text-prism-purple">{integer.format(row.outlets)}</td><td className="px-5 py-4 text-right">{row.districts.size}</td><td className="px-5 py-4 text-right">{row.markets.size}</td><td className="px-5 py-4 text-right">{row.interviewers.size}</td><td className="px-5 py-4 text-right">{integer.format(row.prices)}</td></tr>)}{!loading && !regionSummary.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-prism-muted">No outlets match the filters.</td></tr>}</tbody>
+            <thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr><th className="px-5 py-3 text-right">S/N</th><th className="px-5 py-3">{areaLabel}</th><th className="px-5 py-3 text-right">Outlets created</th><th className="px-5 py-3 text-right">Districts</th><th className="px-5 py-3 text-right">Markets</th><th className="px-5 py-3 text-right">Interviewers</th><th className="px-5 py-3 text-right">Prices submitted</th></tr></thead>
+            <tbody className={loading ? "opacity-50" : ""}>{areaSummary.map((row, index) => <tr key={row.name} className="border-t border-prism-border/60"><td className="px-5 py-4 text-right text-prism-muted">{index + 1}</td><td className="px-5 py-4 font-bold text-prism-text">{row.name}</td><td className="px-5 py-4 text-right font-black text-prism-purple">{integer.format(row.outlets)}</td><td className="px-5 py-4 text-right">{row.districts.size}</td><td className="px-5 py-4 text-right">{row.markets.size}</td><td className="px-5 py-4 text-right">{row.interviewers.size}</td><td className="px-5 py-4 text-right">{integer.format(row.prices)}</td></tr>)}{!loading && !areaSummary.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-prism-muted">No outlets match the filters.</td></tr>}</tbody>
           </table>
         )}
         {view === "outlets" && (
@@ -732,37 +726,21 @@ type ItemGapRow = {
   times_priced: number;
 };
 
-function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
+function ItemGapsTable({ filters, scope }: { filters: Report["filters"]; scope: Report["scope"] }) {
   const [rows, setRows] = useState<ItemGapRow[]>([]);
   const [summary, setSummary] = useState<{ never_priced_pairs: number; items_never_priced: number } | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [pages, setPages] = useState(1);
-  const [regionId, setRegionId] = useState("");
+  const [regionId, setRegionId] = useState(scope.level === "REGION" ? scope.region_id || "" : "");
   const [districtId, setDistrictId] = useState("");
   const [marketId, setMarketId] = useState("");
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [isRegionalStatistician, setIsRegionalStatistician] = useState(false);
-  const [assignedRegionId, setAssignedRegionId] = useState("");
-
-  useEffect(() => {
-    let active = true;
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((response) => response.json().catch(() => null))
-      .then((body) => {
-        if (!active || body?.user?.role !== "REGIONAL_STATISTICIAN") return;
-        const ownRegionId = String(body.user.region_id || "");
-        setIsRegionalStatistician(true);
-        setAssignedRegionId(ownRegionId);
-        setRegionId(ownRegionId);
-        setPage(1);
-      })
-      .catch(() => {});
-    return () => { active = false; };
-  }, []);
+  const isRegionalStatistician = scope.level === "REGION";
+  const assignedRegionId = scope.region_id || "";
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -816,7 +794,7 @@ function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
     <section className="mt-8 overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
       <div className="border-b border-prism-border/70 p-5">
         <h2 className="text-base font-black text-prism-text">Item pricing gaps</h2>
-        <p className="mt-1 text-xs text-prism-muted">Each item appears once for the selected scope. The national view summarises market coverage across the country; use the filters for regional drill-down.</p>
+        <p className="mt-1 text-xs text-prism-muted">Each item appears once for the selected scope. Completion requires quotations from six distinct outlets per market; total prices are shown separately.</p>
         {summary && (
           <div className="mt-4 flex flex-wrap gap-2">
             <span className="rounded-full bg-purple-50 px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-prism-purple">{scopeLabel} view</span>
@@ -838,8 +816,8 @@ function ItemGapsTable({ filters }: { filters: Report["filters"] }) {
       {error && <p className="m-5 rounded-xl bg-red-50 p-3 text-xs text-red-700">{error}</p>}
       <div className="overflow-x-auto">
         <table className="min-w-full text-left text-xs">
-          <thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr><th className="px-5 py-3 text-right">S/N</th><th className="px-5 py-3">Item</th><th className="px-5 py-3">Scope</th><th className="px-5 py-3 text-right">Markets priced</th><th className="px-5 py-3 text-right">Markets at 3+</th><th className="px-5 py-3 text-right">Total prices</th><th className="px-5 py-3">Status</th></tr></thead>
-          <tbody className={loading ? "opacity-50" : ""}>{rows.map((row, index) => <tr key={row.item_id} className="border-t border-prism-border/60"><td className="px-5 py-4 text-right text-prism-muted">{(page - 1) * 10 + index + 1}</td><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.item_name}</p><p className="text-[10px] text-prism-muted">{row.item_code}</p></td><td className="px-5 py-4 font-semibold text-prism-text">{scopeLabel}</td><td className="px-5 py-4 text-right"><span className="font-black text-prism-purple">{row.markets_priced}</span><span className="text-prism-muted"> / {row.expected_markets}</span></td><td className="px-5 py-4 text-right font-bold text-prism-text">{row.markets_at_target}</td><td className="px-5 py-4 text-right font-black text-prism-text">{row.times_priced}</td><td className="px-5 py-4"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-bold uppercase ${row.times_priced === 0 ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{row.times_priced === 0 ? "Never priced in scope" : `${row.markets_with_gap} markets below 3`}</span></td></tr>)}{!loading && !rows.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-prism-muted">No pricing gaps match the filters.</td></tr>}</tbody>
+          <thead className="text-[10px] uppercase tracking-[0.13em] text-prism-muted"><tr><th className="px-5 py-3 text-right">S/N</th><th className="px-5 py-3">Item</th><th className="px-5 py-3">Scope</th><th className="px-5 py-3 text-right">Markets priced</th><th className="px-5 py-3 text-right">Markets at 6 outlets</th><th className="px-5 py-3 text-right">Total prices</th><th className="px-5 py-3">Status</th></tr></thead>
+          <tbody className={loading ? "opacity-50" : ""}>{rows.map((row, index) => <tr key={row.item_id} className="border-t border-prism-border/60"><td className="px-5 py-4 text-right text-prism-muted">{(page - 1) * 10 + index + 1}</td><td className="px-5 py-4"><p className="font-bold text-prism-text">{row.item_name}</p><p className="text-[10px] text-prism-muted">{row.item_code}</p></td><td className="px-5 py-4 font-semibold text-prism-text">{scopeLabel}</td><td className="px-5 py-4 text-right"><span className="font-black text-prism-purple">{row.markets_priced}</span><span className="text-prism-muted"> / {row.expected_markets}</span></td><td className="px-5 py-4 text-right font-bold text-prism-text">{row.markets_at_target}</td><td className="px-5 py-4 text-right font-black text-prism-text">{row.times_priced}</td><td className="px-5 py-4"><span className={`whitespace-nowrap rounded-full px-2 py-1 text-[9px] font-bold uppercase ${row.times_priced === 0 ? "bg-red-50 text-red-700" : "bg-amber-50 text-amber-700"}`}>{row.times_priced === 0 ? "Never priced in scope" : `${row.markets_with_gap} markets below 6 outlets`}</span></td></tr>)}{!loading && !rows.length && <tr><td colSpan={7} className="px-5 py-10 text-center text-prism-muted">No pricing gaps match the filters.</td></tr>}</tbody>
         </table>
       </div>
       <TablePager page={page} pages={pages} total={total} unit="items" onPage={setPage} />

@@ -69,6 +69,34 @@ type Comparison = {
   assessment: "PRICE_VARIANCE" | "WIDE_RANGE" | "CONSISTENT" | "NO_PEERS";
 };
 
+type ItemQuoteCompletenessRow = {
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  markets_in_scope: number;
+  expected_outlet_quotes: number;
+  prices_received: number;
+  outlet_quotes_received: number;
+  remaining_outlet_quotes: number;
+  markets_complete: number;
+  markets_in_progress: number;
+  markets_not_started: number;
+  completion_pct: number;
+  completion_status: "COMPLETE" | "IN_PROGRESS" | "NOT_STARTED";
+  last_submission_at: string | null;
+};
+
+type ItemQuoteCompletenessSummary = {
+  items: number;
+  prices_received: number;
+  outlet_quotes_received: number;
+  expected_outlet_quotes: number;
+  remaining_outlet_quotes: number;
+  complete_items: number;
+  completion_pct: number;
+  target_per_market: number;
+};
+
 const num = new Intl.NumberFormat("en-GH", { maximumFractionDigits: 2 });
 const money = new Intl.NumberFormat("en-GH", { style: "currency", currency: "GHS", maximumFractionDigits: 2 });
 
@@ -126,6 +154,7 @@ function ValidationContent({ data }: { data: ValidationData }) {
 
       <MarketGapTable regions={data.market_gaps.regions} markets={data.market_gaps.markets} scopeRegionId={data.scope.region_id} scopeRegionName={data.scope.region_name} marketScoped={isSupervisor} />
       <ReaderGapTable regions={data.reader_gaps.regions} readers={data.reader_gaps.readers} scopeRegionId={data.scope.region_id} scopeRegionName={data.scope.region_name} marketScoped={isSupervisor} />
+      <ItemQuoteCompletenessReport scope={data.scope} />
       <ComparisonTable items={data.filters.items} uoms={data.filters.uoms ?? []} />
     </>
   );
@@ -209,6 +238,272 @@ function Pager({ page, pages, total, onPage }: { page: number; pages: number; to
 
 function SortHead({ label, onClick, right = false }: { label: string; onClick: () => void; right?: boolean }) {
   return <th className={`px-5 py-3 ${right ? "text-right" : ""}`}><button onClick={onClick} className="font-bold uppercase hover:text-prism-purple">{label} ↕</button></th>;
+}
+
+function ItemQuoteCompletenessReport({ scope }: { scope: ValidationData["scope"] }) {
+  const [rows, setRows] = useState<ItemQuoteCompletenessRow[]>([]);
+  const [summary, setSummary] = useState<ItemQuoteCompletenessSummary>({
+    items: 0,
+    prices_received: 0,
+    outlet_quotes_received: 0,
+    expected_outlet_quotes: 0,
+    remaining_outlet_quotes: 0,
+    complete_items: 0,
+    completion_pct: 0,
+    target_per_market: 6
+  });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<10 | 20>(10);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState("");
+  const [appliedSearch, setAppliedSearch] = useState("");
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setAppliedSearch((current) => {
+        const next = search.trim();
+        if (next !== current) {
+          setLoading(true);
+          setPage(1);
+        }
+        return next;
+      });
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
+    let active = true;
+    const params = new URLSearchParams({
+      page: String(page),
+      pageSize: String(pageSize)
+    });
+    if (appliedSearch) params.set("search", appliedSearch);
+    if (status) params.set("status", status);
+
+    fetch(`/api/dashboard/validations/initiation/item-quote-completeness?${params}`, {
+      cache: "no-store"
+    })
+      .then(async (response) => {
+        const body = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(body?.error?.message || "Unable to load item quote report");
+        return body;
+      })
+      .then((body) => {
+        if (!active) return;
+        setRows(body.rows ?? []);
+        setSummary(body.summary);
+        setTotalPages(body.pagination?.total_pages ?? 1);
+        setError("");
+      })
+      .catch((reason) => {
+        if (active) setError(reason instanceof Error ? reason.message : "Unable to load item quote report");
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [page, pageSize, appliedSearch, status]);
+
+  const scopeDescription = scope.level === "NATIONAL"
+    ? "National view across every market."
+    : scope.level === "REGION"
+      ? `${scope.region_name || "Your region"} only.`
+      : "Only markets assigned to you.";
+
+  return (
+    <section className="mt-8 overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
+      <div className="border-b border-prism-border/70 p-5">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+          <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-black text-prism-text">Item quote completeness</h2>
+              <span className="rounded-full bg-prism-purple/10 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.14em] text-prism-purple">
+                {summary.target_per_market} outlets per item / market
+              </span>
+            </div>
+            <p className="mt-1 max-w-3xl text-xs leading-5 text-prism-muted">
+              {scopeDescription} Completion uses distinct outlets because multiple product prices from the same outlet count as additional prices, but not as additional outlet quota.
+            </p>
+          </div>
+          <p className="text-xs font-bold text-prism-teal">
+            {num.format(summary.complete_items)} of {num.format(summary.items)} items complete
+          </p>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <QuoteMetric label="Items monitored" value={num.format(summary.items)} />
+          <QuoteMetric label="Prices received" value={num.format(summary.prices_received)} />
+          <QuoteMetric
+            label="Outlet quotations"
+            value={`${num.format(summary.outlet_quotes_received)} / ${num.format(summary.expected_outlet_quotes)}`}
+          />
+          <QuoteMetric label="Overall completion" value={`${num.format(summary.completion_pct)}%`} />
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-3 border-b border-prism-border/60 bg-slate-50/60 p-4 md:flex-row md:items-center">
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search item name or code…"
+          className="min-w-64 flex-1 rounded-xl border border-prism-border bg-white px-3 py-2.5 text-xs text-prism-text outline-none focus:border-prism-purple"
+        />
+        <select
+          value={status}
+          onChange={(event) => {
+            setLoading(true);
+            setStatus(event.target.value);
+            setPage(1);
+          }}
+          className="rounded-xl border border-prism-border bg-white px-3 py-2.5 text-xs text-prism-text"
+        >
+          <option value="">All completion statuses</option>
+          <option value="COMPLETE">Complete</option>
+          <option value="IN_PROGRESS">In progress</option>
+          <option value="NOT_STARTED">Not started</option>
+        </select>
+        <select
+          value={pageSize}
+          onChange={(event) => {
+            setLoading(true);
+            setPageSize(Number(event.target.value) as 10 | 20);
+            setPage(1);
+          }}
+          className="rounded-xl border border-prism-border bg-white px-3 py-2.5 text-xs text-prism-text"
+        >
+          <option value={10}>10 per page</option>
+          <option value={20}>20 per page</option>
+        </select>
+      </div>
+
+      {error && <p className="m-5 rounded-xl bg-red-50 p-3 text-xs text-red-700">{error}</p>}
+
+      <div className="overflow-x-auto">
+        <table className="min-w-full text-left text-xs">
+          <thead className="text-[10px] uppercase tracking-[0.12em] text-prism-muted">
+            <tr>
+              <th className="px-5 py-3 text-right">S/N</th>
+              <th className="px-5 py-3">Item</th>
+              <th className="px-5 py-3 text-right">Markets</th>
+              <th className="px-5 py-3 text-right">Prices received</th>
+              <th className="px-5 py-3 text-right">Outlet quota</th>
+              <th className="px-5 py-3 text-right">Remaining</th>
+              <th className="px-5 py-3">Market progress</th>
+              <th className="min-w-44 px-5 py-3">Completion</th>
+              <th className="px-5 py-3">Status</th>
+              <th className="px-5 py-3">Last price</th>
+            </tr>
+          </thead>
+          <tbody className={loading ? "opacity-50" : ""}>
+            {rows.map((row, index) => (
+              <tr key={row.item_id} className="border-t border-prism-border/60 hover:bg-slate-50">
+                <td className="px-5 py-4 text-right text-prism-muted">{(page - 1) * pageSize + index + 1}</td>
+                <td className="px-5 py-4">
+                  <p className="font-bold text-prism-text">{row.item_name}</p>
+                  <p className="text-[10px] text-prism-muted">{row.item_code}</p>
+                </td>
+                <td className="px-5 py-4 text-right">{num.format(row.markets_in_scope)}</td>
+                <td className="px-5 py-4 text-right font-black text-prism-purple">{num.format(row.prices_received)}</td>
+                <td className="px-5 py-4 text-right font-semibold">
+                  {num.format(row.outlet_quotes_received)} / {num.format(row.expected_outlet_quotes)}
+                </td>
+                <td className={`px-5 py-4 text-right font-black ${row.remaining_outlet_quotes ? "text-red-600" : "text-teal-700"}`}>
+                  {num.format(row.remaining_outlet_quotes)}
+                </td>
+                <td className="px-5 py-4 text-prism-muted">
+                  <p><span className="font-bold text-teal-700">{row.markets_complete}</span> complete</p>
+                  <p className="text-[10px]">{row.markets_in_progress} in progress · {row.markets_not_started} not started</p>
+                </td>
+                <td className="px-5 py-4">
+                  <div className="flex items-center gap-3">
+                    <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-100">
+                      <div
+                        className={`h-full rounded-full ${completionColor(row.completion_pct)}`}
+                        style={{ width: `${Math.min(Math.max(row.completion_pct, 0), 100)}%` }}
+                      />
+                    </div>
+                    <span className="w-12 text-right font-black text-prism-text">{num.format(row.completion_pct)}%</span>
+                  </div>
+                </td>
+                <td className="px-5 py-4"><CompletionStatus value={row.completion_status} /></td>
+                <td className="whitespace-nowrap px-5 py-4 text-prism-muted">{formatSubmissionDate(row.last_submission_at)}</td>
+              </tr>
+            ))}
+            {!loading && !rows.length && (
+              <tr>
+                <td colSpan={10} className="px-5 py-10 text-center text-prism-muted">
+                  No items match the selected filters.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center justify-between border-t border-prism-border/70 p-5">
+        <p className="text-xs text-prism-muted">{num.format(summary.items)} items · Page {page} of {totalPages}</p>
+        <div className="flex gap-2">
+          <button
+            disabled={page <= 1 || loading}
+            onClick={() => {
+              setLoading(true);
+              setPage((value) => value - 1);
+            }}
+            className="rounded-xl border border-prism-border px-3 py-2 text-xs font-bold disabled:opacity-40"
+          >
+            Previous
+          </button>
+          <button
+            disabled={page >= totalPages || loading}
+            onClick={() => {
+              setLoading(true);
+              setPage((value) => value + 1);
+            }}
+            className="rounded-xl bg-prism-purple px-3 py-2 text-xs font-bold text-white disabled:opacity-40"
+          >
+            Next
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function QuoteMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <article className="rounded-2xl border border-prism-border/70 bg-prism-bg/50 p-4">
+      <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-prism-muted">{label}</p>
+      <p className="mt-2 text-xl font-black text-prism-text">{value}</p>
+    </article>
+  );
+}
+
+function CompletionStatus({ value }: { value: ItemQuoteCompletenessRow["completion_status"] }) {
+  const config = {
+    COMPLETE: ["Complete", "bg-teal-50 text-teal-700"],
+    IN_PROGRESS: ["In progress", "bg-amber-50 text-amber-700"],
+    NOT_STARTED: ["Not started", "bg-red-50 text-red-700"]
+  }[value];
+  return <span className={`whitespace-nowrap rounded-full px-2.5 py-1 text-[9px] font-bold uppercase ${config[1]}`}>{config[0]}</span>;
+}
+
+function completionColor(value: number) {
+  if (value >= 100) return "bg-emerald-500";
+  if (value >= 80) return "bg-teal-500";
+  if (value >= 50) return "bg-amber-400";
+  return "bg-red-500";
+}
+
+function formatSubmissionDate(value?: string | null) {
+  if (!value) return "No price";
+  return new Intl.DateTimeFormat("en-GH", { dateStyle: "medium" }).format(new Date(value));
 }
 
 function ComparisonTable({ items, uoms }: { items: ItemOption[]; uoms: string[] }) {
