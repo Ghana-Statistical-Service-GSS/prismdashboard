@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { SearchableSelect } from "@/components/common/SearchableSelect";
@@ -80,6 +80,16 @@ type Comparison = {
   compared_markets: number | null;
   price_deviation_pct: number | null;
   assessment: "PRICE_VARIANCE" | "WIDE_RANGE" | "CONSISTENT" | "NO_PEERS";
+};
+
+type ExportJob = {
+  id: string;
+  report_type: "PRODUCTS_PRICES" | "PRICE_COMPARISON";
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "EXPIRED";
+  progress_rows: number;
+  total_rows: number | null;
+  file_name: string | null;
+  error_message: string | null;
 };
 
 type ItemQuoteCompletenessRow = {
@@ -584,8 +594,31 @@ function ComparisonTable({ items, uoms }: { items: ItemOption[]; uoms: string[] 
   const [search, setSearch] = useState("");
   const [appliedSearch, setAppliedSearch] = useState("");
   const [loading, setLoading] = useState(true);
-  const [exporting, setExporting] = useState(false);
+  const [creatingExport, setCreatingExport] = useState(false);
+  const [downloadingExport, setDownloadingExport] = useState(false);
+  const [exportJobs, setExportJobs] = useState<ExportJob[]>([]);
   const [exportError, setExportError] = useState("");
+  const activeExport = exportJobs.find((job) => job.status === "PENDING" || job.status === "PROCESSING");
+  const latestComparisonExport = exportJobs.find((job) => job.report_type === "PRICE_COMPARISON" && job.status === "COMPLETED");
+
+  const loadExportJobs = useCallback(async () => {
+    const response = await fetch("/api/dashboard/reports/initiation/exports?limit=10", { cache: "no-store" });
+    const body = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(body?.error?.message || "Unable to load exports");
+    setExportJobs(body.jobs || []);
+  }, []);
+
+  useEffect(() => {
+    loadExportJobs().catch(() => {});
+  }, [loadExportJobs]);
+
+  useEffect(() => {
+    if (!activeExport) return;
+    const timer = window.setInterval(() => {
+      loadExportJobs().catch((reason) => setExportError(reason instanceof Error ? reason.message : "Unable to refresh export"));
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeExport, loadExportJobs]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -616,27 +649,38 @@ function ComparisonTable({ items, uoms }: { items: ItemOption[]; uoms: string[] 
     return () => { active = false; };
   }, [page, itemId, uomType, uom, appliedSearch]);
 
-  const exportToExcel = async () => {
-    setExporting(true);
+  const createExport = async () => {
+    setCreatingExport(true);
     setExportError("");
     try {
-      const params = new URLSearchParams();
-      if (itemId) params.set("itemId", itemId);
-      if (uomType) params.set("uomType", uomType);
-      if (uom) params.set("uom", uom);
-      if (appliedSearch) params.set("search", appliedSearch);
-      const response = await fetch(`/api/dashboard/validations/initiation/comparisons/export?${params}`, { cache: "no-store" });
+      const response = await fetch("/api/dashboard/reports/initiation/exports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reportType: "PRICE_COMPARISON", itemId, uomType, uom, search: appliedSearch }),
+      });
       const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error?.message || "Unable to export");
-      const XLSX = await import("xlsx");
-      const workbook = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(body.products ?? []), "Products");
-      XLSX.utils.book_append_sheet(workbook, XLSX.utils.json_to_sheet(body.prices ?? []), "Prices");
-      XLSX.writeFile(workbook, `prism-products-prices-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      if (!response.ok) throw new Error(body?.error?.message || "Unable to start export");
+      setExportJobs((current) => [body.job, ...current.filter((job) => job.id !== body.job.id)]);
     } catch (reason) {
-      setExportError(reason instanceof Error ? reason.message : "Unable to export");
+      setExportError(reason instanceof Error ? reason.message : "Unable to start export");
     } finally {
-      setExporting(false);
+      setCreatingExport(false);
+    }
+  };
+
+  const downloadExport = async () => {
+    if (!latestComparisonExport) return;
+    setDownloadingExport(true);
+    setExportError("");
+    try {
+      const response = await fetch(`/api/dashboard/reports/initiation/exports/${encodeURIComponent(latestComparisonExport.id)}/download`, { cache: "no-store" });
+      const body = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(body?.error?.message || "Unable to download export");
+      window.location.assign(body.url);
+    } catch (reason) {
+      setExportError(reason instanceof Error ? reason.message : "Unable to download export");
+    } finally {
+      setDownloadingExport(false);
     }
   };
 
@@ -645,7 +689,12 @@ function ComparisonTable({ items, uoms }: { items: ItemOption[]; uoms: string[] 
       <div className="border-b border-prism-border/70 p-5">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div><h2 className="text-base font-black text-prism-text">Item and product price comparison</h2><p className="mt-1 text-xs text-prism-muted">Only price exceptions above 25% are shown. Products must share the same item, UOM and market, have equal weights or average weights within 10%, and both products must have at least two quotations in that market.</p></div>
-          <button onClick={exportToExcel} disabled={exporting} className="shrink-0 rounded-full bg-prism-teal px-4 py-2 text-xs font-bold text-white disabled:opacity-50">{exporting ? "Exporting…" : "Export to Excel"}</button>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {latestComparisonExport && !activeExport && <button onClick={downloadExport} disabled={downloadingExport} className="rounded-full border border-prism-teal bg-white px-4 py-2 text-xs font-bold text-teal-800 disabled:opacity-50">{downloadingExport ? "Opening…" : "Download latest"}</button>}
+            <button onClick={createExport} disabled={creatingExport || Boolean(activeExport)} className="rounded-full bg-prism-teal px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
+              {creatingExport ? "Queuing…" : activeExport ? `Download in progress${activeExport.total_rows ? ` · ${Math.min(100, Math.round((activeExport.progress_rows / activeExport.total_rows) * 100))}%` : "…"}` : "Prepare CSV download"}
+            </button>
+          </div>
         </div>
         {exportError && <p className="mt-3 rounded-xl bg-red-50 p-3 text-xs text-red-700">{exportError}</p>}
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
