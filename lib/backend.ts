@@ -1,7 +1,13 @@
 import http from "node:http";
 import https from "node:https";
 
-const BACKEND_URL = (process.env.PRISM_BACKEND_URL || "http://localhost:6001").replace(/\/$/, "");
+const BACKEND_URL = (
+  process.env.PRISM_BACKEND_INTERNAL_URL
+  || process.env.PRISM_BACKEND_URL
+  || "http://localhost:6001"
+).replace(/\/$/, "");
+const httpAgent = new http.Agent({ keepAlive: true, keepAliveMsecs: 1_000, maxSockets: 50, maxFreeSockets: 10 });
+const httpsAgent = new https.Agent({ keepAlive: true, keepAliveMsecs: 1_000, maxSockets: 50, maxFreeSockets: 10 });
 
 export function dashboardBackendUrl(path: string) {
   return `${BACKEND_URL}/api/v1/dashboard${path}`;
@@ -26,6 +32,7 @@ export function dashboardBackendRequest(path: string, init: BackendRequestInit =
       {
         method: init.method || "GET",
         headers: init.headers,
+        agent: url.protocol === "https:" ? httpsAgent : httpAgent,
       },
       (response) => {
         const chunks: Buffer[] = [];

@@ -4,6 +4,7 @@
 import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { clearDashboardUser } from "@/lib/dashboard-user-client";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -27,6 +28,7 @@ export default function LoginPage() {
         setError(data?.error?.message || "Unable to sign in.");
         return;
       }
+      clearDashboardUser();
       router.replace("/dashboard");
       router.refresh();
     } catch {
@@ -43,10 +45,10 @@ export default function LoginPage() {
           {/* PRISM identity */}
           <div className="w-72 sm:w-80 md:w-[390px]">
             <Image
-              src="/Prism-logo.png"
+              src="/Prism-logo-ui.png"
               alt="PRISM-Ghana — Price Index System Monitor"
-              width={1254}
-              height={1254}
+              width={512}
+              height={512}
               sizes="(max-width: 768px) 288px, 390px"
               className="h-auto w-full select-none object-contain"
               priority

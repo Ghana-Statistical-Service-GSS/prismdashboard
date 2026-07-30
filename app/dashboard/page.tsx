@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
+import { TablePagination } from "@/components/common/TablePagination";
 
 type Level = "regions" | "districts" | "markets" | "users";
 
@@ -44,6 +45,7 @@ type RankingRow = {
 
 type Overview = {
   generated_at: string;
+  primary_level: Level;
   scope: {
     level: "NATIONAL" | "REGION" | "MARKETS";
     role: "SUPERVISOR" | "REGIONAL_STATISTICIAN" | "HQ" | "ADMIN";
@@ -250,6 +252,11 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [breakdownMetric, setBreakdownMetric] = useState<BreakdownMetric | null>(null);
+  const [levelLoading, setLevelLoading] = useState<Level | null>(null);
+  const [userPage, setUserPage] = useState(1);
+  const [userPageSize, setUserPageSize] = useState<10 | 20>(20);
+  const [userTotal, setUserTotal] = useState(0);
+  const loadedLevels = useRef(new Set<Level>());
 
   useEffect(() => {
     let active = true;
@@ -262,6 +269,7 @@ export default function DashboardPage() {
       .then((data: Overview) => {
         if (!active) return;
         setOverview(data);
+        loadedLevels.current = new Set([data.primary_level]);
         if (data.scope.level === "REGION") {
           setLevel("districts");
           setRegionId(data.scope.region_id || "all");
@@ -274,16 +282,80 @@ export default function DashboardPage() {
     return () => { active = false; };
   }, []);
 
+  const loadBreakdown = useCallback(async (target: Exclude<Level, "users">) => {
+    if (loadedLevels.current.has(target)) return;
+    const response = await fetch(`/api/dashboard/overview/breakdown?level=${target}`, { cache: "no-store" });
+    const data = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(data?.error?.message || `Unable to load ${target}`);
+    setOverview((current) => current ? {
+      ...current,
+      submissions: { ...current.submissions, [target]: data.rows as SubmissionRow[] },
+    } : current);
+    loadedLevels.current.add(target);
+  }, []);
+
+  const selectLevel = useCallback(async (target: Level) => {
+    setError("");
+    setLevelLoading(target);
+    try {
+      if (target === "districts") {
+        await loadBreakdown("districts");
+      } else if (target === "markets" || target === "users") {
+        await Promise.all([loadBreakdown("districts"), loadBreakdown("markets")]);
+      }
+      setLevel(target);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Unable to load dashboard breakdown");
+    } finally {
+      setLevelLoading(null);
+    }
+  }, [loadBreakdown]);
+
+  useEffect(() => {
+    if (level !== "users") return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({
+      level: "users",
+      page: String(userPage),
+      pageSize: String(userPageSize),
+    });
+    if (regionId !== "all") params.set("regionId", regionId);
+    if (districtId !== "all") params.set("districtId", districtId);
+    if (marketId !== "all") params.set("marketId", marketId);
+
+    setLevelLoading("users");
+    fetch(`/api/dashboard/overview/breakdown?${params}`, { cache: "no-store", signal: controller.signal })
+      .then(async (response) => {
+        const data = await response.json().catch(() => null);
+        if (!response.ok) throw new Error(data?.error?.message || "Unable to load readers");
+        return data;
+      })
+      .then((data) => {
+        setOverview((current) => current ? {
+          ...current,
+          submissions: { ...current.submissions, users: data.rows as SubmissionRow[] },
+        } : current);
+        setUserTotal(Number(data.pagination?.total || 0));
+      })
+      .catch((reason) => {
+        if (reason.name !== "AbortError") setError(reason.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLevelLoading(null);
+      });
+    return () => controller.abort();
+  }, [level, regionId, districtId, marketId, userPage, userPageSize]);
+
   const filteredRows = useMemo(() => {
     if (!overview) return [];
     const rows = overview.submissions[level];
+    if (level === "users") return rows;
     return rows.filter((row) => {
       if (level !== "regions" && regionId !== "all" && row.region_id !== regionId) return false;
-      if ((level === "markets" || level === "users") && districtId !== "all" && row.district_id !== districtId) return false;
-      if (level === "users" && marketId !== "all" && row.market_id !== marketId) return false;
+      if (level === "markets" && districtId !== "all" && row.district_id !== districtId) return false;
       return true;
     });
-  }, [overview, level, regionId, districtId, marketId]);
+  }, [overview, level, regionId, districtId]);
 
   const availableDistricts = useMemo(() => {
     if (!overview) return [];
@@ -303,15 +375,14 @@ export default function DashboardPage() {
     : isRegional
       ? ["districts", "markets", "users"]
       : ["regions", "districts", "markets", "users"];
-  const breakdownRows = isRegional || isSupervisor
-    ? overview?.submissions.markets || []
-    : overview?.submissions.regions || [];
+  const breakdownRows = primarySubmissionRows;
 
   const drillTo = (nextLevel: Level, row?: SubmissionRow) => {
     if (row?.region_id || level === "regions") setRegionId(row?.region_id || row?.id || "all");
     if (row?.district_id || level === "districts") setDistrictId(row?.district_id || row?.id || "all");
     if (row?.market_id || level === "markets") setMarketId(row?.market_id || row?.id || "all");
-    setLevel(nextLevel);
+    setUserPage(1);
+    void selectLevel(nextLevel);
   };
 
   return (
@@ -421,8 +492,8 @@ export default function DashboardPage() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     {drillLevels.map((item) => (
-                      <button key={item} onClick={() => setLevel(item)} className={`rounded-full px-4 py-2 text-xs font-bold capitalize transition ${level === item ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
-                        {item}
+                      <button key={item} disabled={levelLoading !== null} onClick={() => { setUserPage(1); void selectLevel(item); }} className={`rounded-full px-4 py-2 text-xs font-bold capitalize transition disabled:opacity-50 ${level === item ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
+                        {levelLoading === item ? `Loading ${item}…` : item}
                       </button>
                     ))}
                   </div>
@@ -430,22 +501,22 @@ export default function DashboardPage() {
 
                 {level !== "regions" && (
                   <div className="flex flex-wrap gap-3 border-b border-prism-border/60 bg-slate-50/70 px-5 py-4">
-                    {isRegional ? (
-                      <span className="rounded-xl border border-prism-teal/30 bg-prism-teal/10 px-3 py-2 text-xs font-bold text-teal-800">{overview.scope.region_name || "Assigned region"}</span>
+                    {isRegional || isSupervisor ? (
+                      <span className="rounded-xl border border-prism-teal/30 bg-prism-teal/10 px-3 py-2 text-xs font-bold text-teal-800">{isRegional ? overview.scope.region_name || "Assigned region" : "Assigned markets only"}</span>
                     ) : (
-                      <select value={regionId} onChange={(event) => { setRegionId(event.target.value); setDistrictId("all"); setMarketId("all"); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
+                      <select value={regionId} onChange={(event) => { setRegionId(event.target.value); setDistrictId("all"); setMarketId("all"); setUserPage(1); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
                         <option value="all">All regions</option>
                         {overview.submissions.regions.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
                       </select>
                     )}
                     {(level === "markets" || level === "users") && (
-                      <select value={districtId} onChange={(event) => { setDistrictId(event.target.value); setMarketId("all"); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
+                      <select value={districtId} onChange={(event) => { setDistrictId(event.target.value); setMarketId("all"); setUserPage(1); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
                         <option value="all">All districts</option>
                         {availableDistricts.map((row) => <option key={row.id} value={row.id}>{row.name}</option>)}
                       </select>
                     )}
                     {level === "users" && (
-                      <select value={marketId} onChange={(event) => setMarketId(event.target.value)} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
+                      <select value={marketId} onChange={(event) => { setMarketId(event.target.value); setUserPage(1); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs text-prism-text">
                         <option value="all">All markets</option>
                         {overview.submissions.markets
                           .filter((row) => (regionId === "all" || row.region_id === regionId) && (districtId === "all" || row.district_id === districtId))
@@ -490,6 +561,15 @@ export default function DashboardPage() {
                     </tbody>
                   </table>
                 </div>
+                {level === "users" && (
+                  <TablePagination
+                    page={userPage}
+                    pageSize={userPageSize}
+                    total={userTotal}
+                    onPageChange={setUserPage}
+                    onPageSizeChange={(size) => { setUserPageSize(size); setUserPage(1); }}
+                  />
+                )}
               </section>
 
               <section className="mt-8 grid gap-6 xl:grid-cols-2">

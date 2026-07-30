@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { ChangePasswordModal } from "@/components/auth/ChangePasswordModal";
 import { useAuthActions } from "@/hooks/useAuthActions";
 import type { DashboardUser } from "@/lib/auth";
+import { loadDashboardUser } from "@/lib/dashboard-user-client";
 
 export function Topbar() {
   const [user, setUser] = useState<DashboardUser | null>(null);
@@ -15,13 +16,9 @@ export function Topbar() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then(async (response) => {
-        if (!response.ok) throw new Error("Session unavailable");
-        return response.json();
-      })
-      .then((data) => {
-        if (active) setUser(data.user);
+    loadDashboardUser()
+      .then((dashboardUser) => {
+        if (active) setUser(dashboardUser);
       })
       .catch(() => {
         if (active) signOut();
@@ -34,7 +31,7 @@ export function Topbar() {
       {/* Left logo */}
       <div className="flex items-center">
         <Image
-          src="/gss-logo.png"
+          src="/gss-logo-ui.png"
           alt="Ghana Statistical Service"
           width={50}
           height={50}
@@ -47,7 +44,7 @@ export function Topbar() {
         <div className="pointer-events-auto flex items-center gap-3 rounded-full bg-white px-5 py-3 shadow-sm">
           <div className="relative h-9 w-9">
             <Image
-              src="/user-avatar.png"
+              src="/user-avatar-ui.png"
               alt="User avatar"
               fill
               className="rounded-full object-cover"
@@ -72,7 +69,7 @@ export function Topbar() {
           className="relative h-9 w-9 rounded-full border-2 border-white shadow-md"
         >
           <Image
-            src="/user-avatar.png"
+            src="/user-avatar-ui.png"
             alt="User avatar"
             fill
             className="rounded-full object-cover"

@@ -2,11 +2,13 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { useAuthActions } from "@/hooks/useAuthActions";
 import type { DashboardUser } from "@/lib/auth";
+import { loadDashboardUser } from "@/lib/dashboard-user-client";
 
 type NavItem = {
   label: string;
@@ -66,9 +68,8 @@ export function Sidebar() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/auth/me", { cache: "no-store" })
-      .then((response) => response.ok ? response.json() : null)
-      .then((body) => { if (active && body?.user?.role) setRole(body.user.role); })
+    loadDashboardUser()
+      .then((user) => { if (active) setRole(user.role); })
       .catch(() => {});
     return () => { active = false; };
   }, []);
@@ -90,7 +91,7 @@ export function Sidebar() {
       <div className="flex items-center gap-2 border-b border-prism-border/60 px-4 py-3">
         <div className="relative h-20 w-20 shrink-0">
           <Image
-            src="/Prism-logo.png"
+            src="/Prism-logo-ui.png"
             fill
             alt="PRISM-Ghana logo"
             sizes="80px"
@@ -120,7 +121,7 @@ export function Sidebar() {
                   item.href && pathname.startsWith(item.href ?? "");
                 return (
                   <li key={item.label}>
-                      <a
+                      <Link
                         href={item.href ?? "#"}
                         className={clsx(
                           "flex items-center gap-2 rounded-full px-3 py-2 text-xs font-semibold uppercase tracking-[0.12em] transition",
@@ -136,7 +137,7 @@ export function Sidebar() {
                           )}
                         />
                         {item.label}
-                      </a>
+                      </Link>
                   </li>
                 );
               })}

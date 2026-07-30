@@ -5,8 +5,8 @@ export const metadata: Metadata = {
   title: "PRISM | Price Index System Monitor",
   description: "Price Index System Monitor for Ghana Statistical Service",
   icons: {
-    icon: "/Prism-logo.png",
-    apple: "/Prism-logo.png",
+    icon: "/prism-icon.png",
+    apple: "/Prism-logo-ui.png",
   },
 };
 

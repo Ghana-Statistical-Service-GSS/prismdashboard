@@ -11,3 +11,4 @@ services:
       # Read from the .env file next to this compose file (see .env.example).
       # Falls back to the local backend port if .env doesn't set it.
       PRISM_BACKEND_URL: ${PRISM_BACKEND_URL:-http://localhost:6001}
+      PRISM_BACKEND_INTERNAL_URL: ${PRISM_BACKEND_INTERNAL_URL:-}

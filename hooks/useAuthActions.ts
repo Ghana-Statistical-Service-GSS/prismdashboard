@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useCallback } from "react";
+import { clearDashboardUser } from "@/lib/dashboard-user-client";
 
 export function useAuthActions() {
   const router = useRouter();
@@ -16,6 +17,7 @@ export function useAuthActions() {
       console.error("Failed to call logout API", e);
     }
 
+    clearDashboardUser();
     router.replace("/");
     router.refresh();
   }, [router]);
