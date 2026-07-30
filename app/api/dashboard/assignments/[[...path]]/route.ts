@@ -9,9 +9,10 @@ async function forward(request: Request, context: { params: Promise<{ path?: str
   const { path = [] } = await context.params;
   if (path.some((segment) => !/^[a-zA-Z0-9-]+$/.test(segment))) return NextResponse.json({ error: { message: "Invalid assignment path" } }, { status: 400 });
   const suffix = path.length ? `/${path.join("/")}` : "";
+  const query = new URL(request.url).search;
   const body = request.method === "GET" ? undefined : await request.text();
   try {
-    const response = await dashboardBackendRequest(`/assignments${suffix}`, {
+    const response = await dashboardBackendRequest(`/assignments${suffix}${query}`, {
       method: request.method,
       headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body || undefined,
