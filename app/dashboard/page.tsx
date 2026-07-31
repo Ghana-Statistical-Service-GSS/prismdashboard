@@ -65,6 +65,7 @@ type Overview = {
     products: number;
     users: number;
     prices_submitted: number;
+    readers_logged_in?: number;
     items_priced: number;
     products_priced: number;
     last_submission_at: string | null;
@@ -127,29 +128,34 @@ function MetricCard({ label, value, hint, accent = "purple", percentage, onBreak
   );
 }
 
-function ReaderSubmissionCard({ submitted, active, onBreakdown }: { submitted: number; active: number; onBreakdown: () => void }) {
-  const percentage = active > 0 ? Math.min(Math.round((submitted / active) * 100), 100) : 0;
-  const status = percentage <= 50
+function ReaderSubmissionCard({ submitted, loggedIn, active, onBreakdown }: { submitted: number; loggedIn: number; active: number; onBreakdown: () => void }) {
+  const submittedPercentage = active > 0 ? Math.min(Math.round((submitted / active) * 100), 100) : 0;
+  const loggedInPercentage = active > 0 ? Math.min(Math.round((loggedIn / active) * 100), 100) : 0;
+  const status = submittedPercentage <= 50
     ? { card: "border-red-700 bg-red-600 text-white", muted: "text-white/80", track: "bg-white/25", fill: "bg-white", label: "Critical" }
-    : percentage <= 79
+    : submittedPercentage <= 79
       ? { card: "border-yellow-300 bg-yellow-100 text-yellow-950", muted: "text-yellow-800", track: "bg-yellow-200", fill: "bg-yellow-500", label: "Needs attention" }
-      : percentage <= 89
+      : submittedPercentage <= 89
         ? { card: "border-amber-500 bg-amber-400 text-amber-950", muted: "text-amber-900", track: "bg-white/35", fill: "bg-amber-900", label: "Improving" }
-        : percentage < 100
+        : submittedPercentage < 100
           ? { card: "border-emerald-300 bg-emerald-100 text-emerald-950", muted: "text-emerald-800", track: "bg-emerald-200", fill: "bg-emerald-600", label: "Strong" }
           : { card: "border-emerald-700 bg-emerald-600 text-white", muted: "text-white/80", track: "bg-white/25", fill: "bg-white", label: "Complete" };
 
   return (
     <article className={`relative overflow-hidden rounded-3xl border p-5 shadow-sm ${status.card}`}>
       <div className="flex items-start justify-between gap-3">
-        <p className={`text-[11px] font-bold uppercase tracking-[0.16em] ${status.muted}`}>Readers who submitted</p>
-        <span className="rounded-full bg-white/25 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em]">{percentage === 100 && <span aria-hidden="true">✓ </span>}{status.label}</span>
+        <p className={`text-[11px] font-bold uppercase tracking-[0.16em] ${status.muted}`}>Reader participation</p>
+        <span className="rounded-full bg-white/25 px-2.5 py-1 text-[9px] font-black uppercase tracking-[0.12em]">{submittedPercentage === 100 && <span aria-hidden="true">✓ </span>}{status.label}</span>
       </div>
-      <p className="mt-3 text-3xl font-black tracking-tight">{percentage}%</p>
-      <div className={`mt-3 h-2 overflow-hidden rounded-full ${status.track}`}><div className={`h-full rounded-full ${status.fill}`} style={{ width: `${percentage}%` }} /></div>
-      <p className={`mt-2 text-xs ${status.muted}`}><strong>{number.format(submitted)}</strong> of {number.format(active)} active readers</p>
+      <div className="mt-3 flex items-baseline gap-2">
+        <p className="text-3xl font-black tracking-tight">{submittedPercentage}%</p>
+        <p className={`text-[10px] font-bold uppercase tracking-[0.12em] ${status.muted}`}>submitted</p>
+      </div>
+      <div className={`mt-3 h-2 overflow-hidden rounded-full ${status.track}`}><div className={`h-full rounded-full ${status.fill}`} style={{ width: `${submittedPercentage}%` }} /></div>
+      <p className={`mt-2 text-xs ${status.muted}`}><strong>{number.format(submitted)}</strong> of {number.format(active)} active readers submitted</p>
+      <p className={`mt-1 text-xs ${status.muted}`}><strong>{number.format(loggedIn)}</strong> of {number.format(active)} active readers logged in ({loggedInPercentage}%)</p>
       <button type="button" onClick={onBreakdown} className="mt-4 rounded-full bg-white/25 px-3 py-1.5 text-[10px] font-black uppercase tracking-[0.12em] transition hover:bg-white/40">
-        View breakdown
+        View submission breakdown
       </button>
     </article>
   );
@@ -425,7 +431,7 @@ export default function DashboardPage() {
                 <MetricCard label={isSupervisor || isRegional ? "Districts" : "Regions"} value={isSupervisor || isRegional ? overview.summary.districts : overview.summary.regions} hint={isSupervisor ? `${number.format(overview.summary.regions)} region${overview.summary.regions === 1 ? "" : "s"} represented` : isRegional ? `${number.format(overview.summary.markets)} markets in ${overview.scope.region_name || "assigned region"}` : `${number.format(overview.summary.districts)} districts`} />
                 <MetricCard label={isSupervisor ? "Assigned markets" : "Markets"} value={overview.summary.markets} hint={`${number.format(overview.summary.outlets)} active outlets`} accent="teal" />
                 <MetricCard label="Outlets created" value={overview.summary.outlets_created} hint={`${number.format(overview.summary.outlets)} currently active`} accent="purple" />
-                <ReaderSubmissionCard submitted={overview.summary.readers_reporting} active={overview.summary.active_readers} onBreakdown={() => setBreakdownMetric("readers")} />
+                <ReaderSubmissionCard submitted={overview.summary.readers_reporting} loggedIn={overview.summary.readers_logged_in ?? 0} active={overview.summary.active_readers} onBreakdown={() => setBreakdownMetric("readers")} />
                 <MetricCard label="Users" value={overview.summary.users} hint="Active system users" accent="pink" />
               </section>
 
