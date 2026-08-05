@@ -475,8 +475,6 @@ function SubmissionTable({ filters, scope }: { filters: Report["filters"]; scope
   const effectivePageSize = isRs ? 10 : pageSize;
   const isColumnVisible = (column: SubmissionColumnId) => visibleColumns.includes(column);
   const visibleColumnCount = visibleColumns.length + (canSelect ? 1 : 0) + (canApprove ? 1 : 0);
-  const activeExport = exportJobs.find((job) => job.status === "PENDING" || job.status === "PROCESSING");
-
   const loadExportJobs = useCallback(async () => {
     const response = await fetch("/api/dashboard/reports/initiation/exports?limit=10", { cache: "no-store" });
     const body = await response.json().catch(() => null);
@@ -487,14 +485,6 @@ function SubmissionTable({ filters, scope }: { filters: Report["filters"]; scope
   useEffect(() => {
     loadExportJobs().catch(() => {});
   }, [loadExportJobs]);
-
-  useEffect(() => {
-    if (!activeExport) return;
-    const timer = window.setInterval(() => {
-      loadExportJobs().catch((reason) => setExportError(reason instanceof Error ? reason.message : "Unable to refresh export"));
-    }, 3000);
-    return () => window.clearInterval(timer);
-  }, [activeExport, loadExportJobs]);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SUBMISSION_COLUMNS_STORAGE_KEY);
@@ -682,7 +672,7 @@ function SubmissionTable({ filters, scope }: { filters: Report["filters"]; scope
           <div className="relative flex shrink-0 flex-wrap gap-2">
             <button type="button" onClick={() => setShowColumnChooser((value) => !value)} aria-expanded={showColumnChooser} className="rounded-full border border-prism-border bg-white px-4 py-2 text-xs font-bold text-prism-text">Columns ({visibleColumns.length}/{ALL_SUBMISSION_COLUMNS.length})</button>
             <button type="button" onClick={() => setExportModalOpen(true)} className="rounded-full bg-prism-teal px-4 py-2 text-xs font-bold text-white">
-              {activeExport ? `Download in progress${activeExport.total_rows ? ` · ${Math.min(100, Math.round((activeExport.progress_rows / activeExport.total_rows) * 100))}%` : "…"}` : "Select download"}
+              Select download
             </button>
             {showColumnChooser && (
               <div className="absolute right-0 top-11 z-30 w-72 rounded-2xl border border-prism-border bg-white p-4 shadow-xl">
