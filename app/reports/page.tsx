@@ -356,8 +356,6 @@ function ExportSelectionModal({
   const markets = useMemo(() => filters.markets.filter((row) => (!selection.regionId || row.region_id === selection.regionId) && (!selection.districtId || row.district_id === selection.districtId)), [filters.markets, selection.regionId, selection.districtId]);
   const readers = useMemo(() => filters.users.filter((row) => (!selection.regionId || row.region_id === selection.regionId) && (!selection.districtId || row.district_id === selection.districtId) && (!selection.marketId || row.market_id === selection.marketId)), [filters.users, selection.regionId, selection.districtId, selection.marketId]);
   const supervisors = useMemo(() => (filters.supervisors || []).filter((row) => !selection.regionId || row.region_id === selection.regionId), [filters.supervisors, selection.regionId]);
-  const activeJob = jobs.find((job) => job.status === "PENDING" || job.status === "PROCESSING");
-
   useEffect(() => {
     const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
     document.addEventListener("keydown", close);
@@ -373,9 +371,9 @@ function ExportSelectionModal({
       <section className="max-h-[92vh] w-full max-w-4xl overflow-auto rounded-3xl bg-white shadow-2xl">
         <header className="flex items-start justify-between border-b border-prism-border px-6 py-5">
           <div>
-            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-prism-teal">Background export</p>
+            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-prism-teal">Direct export</p>
             <h3 className="mt-1 text-xl font-black text-prism-text">Select data to download</h3>
-            <p className="mt-1 text-xs leading-5 text-prism-muted">The CSV is generated outside the API process, opens in Excel, and remains available for 24 hours.</p>
+            <p className="mt-1 text-xs leading-5 text-prism-muted">The CSV is streamed securely from PRISM to your browser without using configured file storage. Keep this page open until the download begins.</p>
           </div>
           <button type="button" onClick={onClose} aria-label="Close export selection" className="rounded-full bg-prism-bg px-4 py-2 text-lg font-bold text-prism-purple">×</button>
         </header>
@@ -401,20 +399,9 @@ function ExportSelectionModal({
           </div>
 
           {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-xs text-red-700">{error}</p>}
-          {activeJob && (
-            <div className="mt-5 rounded-2xl border border-prism-teal/30 bg-teal-50 p-4">
-              <div className="flex items-center justify-between gap-3 text-xs">
-                <strong className="text-teal-900">Download in progress</strong>
-                <span className="text-teal-800">{activeJob.total_rows ? `${Math.min(100, Math.round((activeJob.progress_rows / activeJob.total_rows) * 100))}%` : "Preparing…"}</span>
-              </div>
-              <div className="mt-2 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-prism-teal transition-all" style={{ width: `${activeJob.total_rows ? Math.min(100, Math.round((activeJob.progress_rows / activeJob.total_rows) * 100)) : 8}%` }} /></div>
-              <p className="mt-2 text-[10px] text-teal-800">{integer.format(activeJob.progress_rows)}{activeJob.total_rows ? ` of ${integer.format(activeJob.total_rows)}` : ""} rows prepared</p>
-            </div>
-          )}
-
           <div className="mt-5 flex flex-wrap justify-end gap-2">
             <button type="button" onClick={onClose} className="rounded-full border border-prism-border px-5 py-2.5 text-xs font-bold text-prism-text">Close</button>
-            <button type="button" disabled={busy || Boolean(activeJob)} onClick={() => onCreate(selection)} className="rounded-full bg-prism-teal px-5 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy ? "Queuing…" : activeJob ? "Download in progress" : "Prepare CSV download"}</button>
+            <button type="button" disabled={busy} onClick={() => onCreate(selection)} className="rounded-full bg-prism-teal px-5 py-2.5 text-xs font-bold text-white disabled:opacity-50">{busy ? "Starting…" : "Download CSV directly"}</button>
           </div>
 
           <div className="mt-7 border-t border-prism-border pt-5">
@@ -638,16 +625,19 @@ function SubmissionTable({ filters, scope }: { filters: Report["filters"]; scope
     setCreatingExport(true);
     setExportError("");
     try {
-      const response = await fetch("/api/dashboard/reports/initiation/exports", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(selection),
-      });
-      const body = await response.json().catch(() => null);
-      if (!response.ok) throw new Error(body?.error?.message || "Unable to start export");
-      setExportJobs((current) => [body.job, ...current.filter((job) => job.id !== body.job.id)]);
+      const params = new URLSearchParams();
+      for (const [key, value] of Object.entries(selection)) {
+        if (value) params.set(key, value);
+      }
+      const anchor = document.createElement("a");
+      anchor.href = `/api/dashboard/reports/initiation/exports/direct?${params.toString()}`;
+      anchor.style.display = "none";
+      document.body.appendChild(anchor);
+      anchor.click();
+      window.setTimeout(() => anchor.remove(), 1_000);
+      setExportModalOpen(false);
     } catch (reason) {
-      setExportError(reason instanceof Error ? reason.message : "Unable to start export");
+      setExportError(reason instanceof Error ? reason.message : "Unable to start direct download");
     } finally {
       setCreatingExport(false);
     }
