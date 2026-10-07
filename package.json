@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:local": "PRISM_BACKEND_URL=http://localhost:6001 NEXT_PUBLIC_PRISM_ENV=LOCAL next dev",
+    "dev:testbed": "PRISM_BACKEND_URL=https://prismbackend-aioe.onrender.com NEXT_PUBLIC_PRISM_ENV=TESTBED next dev",
+    "dev:prod": "PRISM_BACKEND_URL=https://api.prism.statsghana.gov.gh NEXT_PUBLIC_PRISM_ENV=PRODUCTION next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"

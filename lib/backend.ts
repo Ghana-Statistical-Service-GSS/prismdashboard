@@ -13,6 +13,11 @@ export function dashboardBackendUrl(path: string) {
   return `${BACKEND_URL}/api/v1/dashboard${path}`;
 }
 
+// The rebasing (Market Reading) module is mounted separately on the backend.
+export function rebasingDashboardBackendUrl(path: string) {
+  return `${BACKEND_URL}/api/v1/rebasing/dashboard${path}`;
+}
+
 type BackendRequestInit = {
   method?: string;
   headers?: Record<string, string>;
@@ -20,10 +25,18 @@ type BackendRequestInit = {
   timeoutMs?: number;
 };
 
+export function dashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
+  return backendRequest(dashboardBackendUrl(path), init);
+}
+
+export function rebasingDashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
+  return backendRequest(rebasingDashboardBackendUrl(path), init);
+}
+
 // Server-to-server requests use the Node HTTP client so connection failures and
 // timeouts can be handled consistently by every dashboard API proxy.
-export function dashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
-  const url = new URL(dashboardBackendUrl(path));
+function backendRequest(target: string, init: BackendRequestInit = {}) {
+  const url = new URL(target);
   const client = url.protocol === "https:" ? https : http;
 
   return new Promise<Response>((resolve, reject) => {
