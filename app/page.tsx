@@ -60,7 +60,8 @@ export default function LoginPage() {
             <h1 className="text-4xl font-extrabold tracking-tight text-black">Sign in to PRISM</h1>
             <p className="mb-5 mt-1 text-sm font-semibold text-prism-muted">Price Index System Monitor</p>
 
-            <form className="w-full space-y-4" onSubmit={handleSubmit}>
+            {/* method="post" keeps credentials out of the URL if the form is submitted before hydration. */}
+            <form method="post" className="w-full space-y-4" onSubmit={handleSubmit}>
               {/* Username */}
               <div className="space-y-1">
                 <label

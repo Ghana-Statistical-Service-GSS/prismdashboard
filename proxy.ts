@@ -10,6 +10,7 @@ const SCOPED_ROLE_RESTRICTED_PATHS = [
   "/missing-prices",
 ];
 const HQ_ONLY_PATHS = [
+  "/collection-calendar",
   "/assignments",
   "/regions",
   "/districts",

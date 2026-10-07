@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { TablePagination } from "@/components/common/TablePagination";
+import { DashboardModeSwitch } from "@/components/dashboard/DashboardModeSwitch";
 
 type Level = "regions" | "districts" | "markets" | "users";
 
@@ -396,11 +397,11 @@ export default function DashboardPage() {
       <Sidebar />
       <div className="min-w-0 flex flex-1 flex-col">
         <Topbar />
-        <main className="flex-1 px-5 py-7 md:px-8 xl:px-10">
+        <main className="flex-1 px-4 py-6 sm:px-5 sm:py-7 md:px-8 xl:px-10">
           <section className="flex flex-col gap-5 xl:flex-row xl:items-end xl:justify-between">
             <div>
               <p className="text-xs font-bold uppercase tracking-[0.2em] text-prism-teal">Operations overview</p>
-              <h1 className="mt-2 text-3xl font-black tracking-tight text-prism-text md:text-4xl">Market Initiation Dashboard</h1>
+              <h1 className="mt-2 text-2xl font-black tracking-tight text-prism-text sm:text-3xl md:text-4xl">Market Initiation Dashboard</h1>
               <p className="mt-2 max-w-2xl text-sm text-prism-muted">
                 {isSupervisor
                   ? "Track submitted prices, outlets and Market Readers only within your assigned markets."
@@ -409,14 +410,7 @@ export default function DashboardPage() {
                   : "Track submitted prices from the national view down to regions, districts, markets and field users."}
               </p>
             </div>
-            <div className="inline-flex w-fit rounded-full border border-prism-border bg-white p-1.5 shadow-sm">
-              <button className="rounded-full bg-prism-purple px-5 py-2.5 text-xs font-bold uppercase tracking-[0.12em] text-white">
-                Market Initiation
-              </button>
-              <button disabled className="cursor-not-allowed rounded-full px-5 py-2.5 text-xs font-bold uppercase tracking-[0.12em] text-prism-muted opacity-60">
-                Market Reading · Soon
-              </button>
-            </div>
+            <DashboardModeSwitch active="initiation" />
           </section>
 
           {loading && <div className="mt-8 rounded-3xl bg-white p-10 text-center text-sm text-prism-muted shadow-sm">Loading live initiation data…</div>}

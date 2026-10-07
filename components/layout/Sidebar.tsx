@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { useAuthActions } from "@/hooks/useAuthActions";
 import type { DashboardUser } from "@/lib/auth";
 import { loadDashboardUser } from "@/lib/dashboard-user-client";
+import { setSidebarOpen, useSidebarOpen } from "@/lib/sidebar-store";
 
 type NavItem = {
   label: string;
@@ -41,6 +42,7 @@ const navSections: NavSection[] = [
     title: "CONFIGURATION",
     hqOnly: true,
     items: [
+      { label: "Collection Calendar", href: "/collection-calendar", hiddenForScopedRole: true },
       { label: "Assignments", href: "/assignments", hiddenForSupervisor: true },
       { label: "Regions", href: "/regions", hiddenForScopedRole: true },
       { label: "Districts", href: "/districts", hiddenForScopedRole: true },
@@ -65,6 +67,7 @@ export function Sidebar() {
   const pathname = usePathname();
   const { signOut } = useAuthActions();
   const [role, setRole] = useState<DashboardUser["role"] | null>(null);
+  const mobileOpen = useSidebarOpen();
 
   useEffect(() => {
     let active = true;
@@ -73,6 +76,15 @@ export function Sidebar() {
       .catch(() => {});
     return () => { active = false; };
   }, []);
+
+  // The mobile drawer closes after navigation and on Escape.
+  useEffect(() => { setSidebarOpen(false); }, [pathname]);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const closeOnEscape = (event: KeyboardEvent) => { if (event.key === "Escape") setSidebarOpen(false); };
+    window.addEventListener("keydown", closeOnEscape);
+    return () => window.removeEventListener("keydown", closeOnEscape);
+  }, [mobileOpen]);
 
   const isScopedRole = role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR";
   const isSupervisor = role === "SUPERVISOR";
@@ -85,8 +97,8 @@ export function Sidebar() {
     }))
     .filter((section) => section.items.length > 0);
 
-  return (
-    <aside className="flex h-screen w-64 flex-col border-r border-prism-border bg-white">
+  const content = (
+    <>
       {/* Logo */}
       <div className="flex items-center gap-2 border-b border-prism-border/60 px-4 py-3">
         <div className="relative h-20 w-20 shrink-0">
@@ -156,6 +168,26 @@ export function Sidebar() {
           Sign Out
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop: fixed column */}
+      <aside className="hidden h-screen w-64 shrink-0 flex-col border-r border-prism-border bg-white lg:flex">
+        {content}
+      </aside>
+
+      {/* Mobile/tablet: slide-in drawer opened from the Topbar menu button */}
+      {mobileOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
+          <button type="button" aria-label="Close navigation" onClick={() => setSidebarOpen(false)} className="absolute inset-0 bg-slate-950/50 backdrop-blur-sm" />
+          <aside className="relative flex h-full w-72 max-w-[85vw] flex-col bg-white shadow-2xl">
+            <button type="button" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" className="absolute right-3 top-3 z-10 grid h-9 w-9 place-items-center rounded-full bg-prism-bg text-lg font-bold text-prism-muted">×</button>
+            {content}
+          </aside>
+        </div>
+      )}
+    </>
   );
 }
