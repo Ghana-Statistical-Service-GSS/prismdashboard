@@ -828,19 +828,51 @@ function CloseWizard({ period, onClose, onClosed }: { period: Period; onClose: (
             <CheckItem state={blocked("weeks_not_closed") ? "fail" : "ok"}>{blocked("weeks_not_closed") ? `${blocked("weeks_not_closed")} week(s) still open - close them on the month card` : "All weeks closed"}</CheckItem>
           </CheckGroup>
           <CheckGroup title="Fieldwork">
-            <CheckItem state={blocked("products_unresolved") ? "fail" : "ok"}>{blocked("products_unresolved") ? `${number.format(blocked("products_unresolved"))} expected products not priced or marked not available` : "Every expected product resolved"}</CheckItem>
+            <CheckItem state={blocked("products_unresolved") ? "fail" : "ok"}>
+              {blocked("products_unresolved")
+                ? <>{`${number.format(blocked("products_unresolved"))} expected products not priced, not available or recorded as not collected. `}<Link href="/market-reading/workload?view=unfinished" className="font-bold text-prism-purple underline">Record what could not be collected</Link></>
+                : "Every expected product resolved"}
+            </CheckItem>
             <CheckItem state={blocked("carryovers_pending_review") || blocked("carryovers_unresolved") ? "fail" : "ok"}>
               {blocked("carryovers_pending_review") || blocked("carryovers_unresolved")
                 ? `Carry-forwards: ${blocked("carryovers_pending_review")} awaiting review, ${blocked("carryovers_unresolved")} approved but not done`
                 : "Carry-forwards resolved"}
             </CheckItem>
           </CheckGroup>
-          <CheckGroup title="Validation">
-            <CheckItem state={stages?.pending_supervisor ? "fail" : "ok"}>{stages?.pending_supervisor ? `${number.format(stages.pending_supervisor)} prices waiting for the Supervisor` : "Supervisor review complete"}</CheckItem>
-            <CheckItem state={stages?.pending_rs ? "fail" : "ok"}>{stages?.pending_rs ? `${number.format(stages.pending_rs)} prices waiting for the Regional Statistician` : "Regional Statistician review complete"}</CheckItem>
-            <CheckItem state={stages?.pending_hq ? "fail" : "ok"}>{stages?.pending_hq ? `${number.format(stages.pending_hq)} prices waiting for HQ final approval` : "HQ final approval complete"}</CheckItem>
-            <CheckItem state={blocked("quotes_rejected") ? "fail" : "ok"}>{blocked("quotes_rejected") ? `${number.format(blocked("quotes_rejected"))} rejected prices waiting for correction` : "No rejected prices outstanding"}</CheckItem>
-          </CheckGroup>
+          {data.flags && (
+            <CheckGroup title="Price reviews (reported, never blocking)">
+              {(() => {
+                const f = data.flags!;
+                const waiting = f.pending_supervisor + f.pending_rs + f.pending_hq;
+                return (
+                  <>
+                    <CheckItem state={waiting ? "warn" : "ok"}>
+                      {waiting
+                        ? `${number.format(waiting)} prices not fully reviewed: ${number.format(f.pending_supervisor)} with Supervisors, ${number.format(f.pending_rs)} with Regional Statisticians, ${number.format(f.pending_hq)} with HQ. Reviewers can keep working; whatever is still pending is approved automatically when the next month opens.`
+                        : "Every price reviewed"}
+                    </CheckItem>
+                    <CheckItem state={f.rejected_not_corrected ? "warn" : "ok"}>
+                      {f.rejected_not_corrected
+                        ? `${number.format(f.rejected_not_corrected)} rejected prices were never corrected. They are not approved; the next month uses the previous reference for those products.`
+                        : "No uncorrected rejections"}
+                    </CheckItem>
+                    {f.by_market.length > 0 && (
+                      <li className="max-h-36 overflow-y-auto rounded-xl bg-amber-50 px-3 py-2 text-[11px] leading-relaxed text-amber-900">
+                        {f.by_market.map((m) => (
+                          <p key={m.market_id}>{`${m.market_name} (${m.region_name}): Supervisor ${m.pending_supervisor} · RS ${m.pending_rs} · HQ ${m.pending_hq} · rejected ${m.rejected}`}</p>
+                        ))}
+                      </li>
+                    )}
+                  </>
+                );
+              })()}
+            </CheckGroup>
+          )}
+          {!data.flags && stages && (
+            <CheckGroup title="Price reviews">
+              <CheckItem state={stages.pending_supervisor + stages.pending_rs + stages.pending_hq ? "warn" : "ok"}>{`${number.format(stages.pending_supervisor + stages.pending_rs + stages.pending_hq)} prices waiting for review`}</CheckItem>
+            </CheckGroup>
+          )}
           {sync && (
             <CheckGroup title="Phones (a warning only - the server cannot see offline work)">
               <CheckItem state={syncRisk ? "warn" : "ok"}>
@@ -866,10 +898,11 @@ function CloseWizard({ period, onClose, onClosed }: { period: Period; onClose: (
           <ul className="space-y-2 text-xs text-prism-text">
             <CheckItem state="ok">{`Readers can no longer submit ${name} data.`}</CheckItem>
             <CheckItem state="ok">{`${name} becomes read-only and leaves readers' phones after their next sync.`}</CheckItem>
-            <CheckItem state="ok">Its final-approved prices become the reference for the following month.</CheckItem>
+            <CheckItem state="ok">Reviewers can still finish its prices; anything not reviewed when the next month opens is approved automatically and marked as such.</CheckItem>
+            <CheckItem state="ok">Its approved prices become the reference for the following month.</CheckItem>
             {period.period_type === "NORMAL" && <CheckItem state="ok">The next month can then be opened.</CheckItem>}
           </ul>
-          {syncRisk > 0 && <Notice tone="warning">{`${syncRisk} reader(s) have not synced recently. Anything still on their phones for ${name} will be refused after closing.`}</Notice>}
+          {syncRisk > 0 && <Notice tone="warning">{`${syncRisk} reader(s) have not synced recently. Anything still on their phones for ${name} can no longer be sent once it is closed.`}</Notice>}
           <p className="rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold text-rose-800">This cannot be reversed.</p>
           {error && <Notice tone="error">{error}</Notice>}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">

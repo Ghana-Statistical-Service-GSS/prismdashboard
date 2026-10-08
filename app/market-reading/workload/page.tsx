@@ -1,5 +1,6 @@
 "use client";
 
+import { Suspense } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { WorkloadPage } from "@/components/rebasing/WorkloadPage";
@@ -12,7 +13,9 @@ export default function MarketReadingWorkloadPage() {
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar />
         <main className="flex-1 px-4 py-6 sm:px-5 sm:py-7 md:px-8 xl:px-10">
-          <WorkloadPage />
+          <Suspense fallback={null}>
+            <WorkloadPage />
+          </Suspense>
         </main>
       </div>
     </div>

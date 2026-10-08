@@ -237,6 +237,9 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
                   {`${quote.review_status === "REJECTED" ? "Rejected" : "Approved"} by ${STAGE_NAME[quote.last_review_stage]}`}
                 </span>
               )}
+              {quote.auto_approved && <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-black text-violet-800" title="Not reviewed before its month closed; approved when the next month opened">Auto-approved</span>}
+              {quote.synced_late && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-800" title="Captured in a week that had ended when it reached the server">Synced late</span>}
+              {quote.time_corrected && <span className="rounded-full bg-orange-100 px-2 py-0.5 text-[10px] font-black text-orange-800" title="The phone's clock was wrong; the server placed it in the week the phone was working in">Time corrected</span>}
               {quote.reference_fixed && <span className="rounded-full bg-amber-500 px-2 py-0.5 text-[10px] font-black text-white">Reference fixed · check details</span>}
               {quote.revision_no > 1 && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800">Correction · revision {quote.revision_no}</span>}
               {quote.review_count > 0 && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-prism-muted">{quote.review_count} previous review{quote.review_count === 1 ? "" : "s"}</span>}

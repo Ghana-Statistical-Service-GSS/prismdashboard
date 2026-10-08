@@ -1,11 +1,13 @@
 "use client";
 
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import type { DashboardUser } from "@/lib/auth";
 import { loadDashboardUser } from "@/lib/dashboard-user-client";
 import { Period, formatDateTime, formatDay, number, periodLabel, rebasingApi } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
+import { UnfinishedWork } from "./UnfinishedWork";
 
 // Market Reading › Workload. How each market's outlets are spread across the
 // three collection weeks. Supervisors propose changes for their markets and
@@ -45,6 +47,7 @@ export function WorkloadPage() {
   const [search, setSearch] = useState("");
   const [region, setRegion] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "changed" | "behind">("all");
+  const [view, setView] = useState<"plan" | "unfinished">(useSearchParams().get("view") === "unfinished" ? "unfinished" : "plan");
 
   useEffect(() => { loadDashboardUser().then(setUser).catch(() => {}); }, []);
   const periods = useRebasingQuery<{ periods: Period[] }>("/periods");
@@ -109,6 +112,16 @@ export function WorkloadPage() {
       {overview.loading && !data && selectedId && <Empty title="Loading workload…">Getting every market&apos;s weekly plan.</Empty>}
 
       {data && period && (
+        <div className="mt-6 inline-flex rounded-full bg-white p-1 shadow-sm">
+          {([["plan", "Weekly plan"], ["unfinished", "Unfinished work"]] as const).map(([key, label]) => (
+            <button key={key} type="button" onClick={() => setView(key)} className={clsx("rounded-full px-5 py-2 text-xs font-bold", view === key ? "bg-prism-purple text-white" : "text-prism-muted hover:text-prism-text")}>{label}</button>
+          ))}
+        </div>
+      )}
+
+      {data && period && view === "unfinished" && selectedId && <UnfinishedWork periodId={selectedId} />}
+
+      {data && period && view === "plan" && (
         <>
           <section className="mt-6 grid gap-3 sm:grid-cols-3">
             {data.weeks.map((w, i) => {
