@@ -32,10 +32,20 @@ export type MarketPlan = {
   week3_target: number | null;
 };
 
+export type CloseFlags = {
+  pending_supervisor: number;
+  pending_rs: number;
+  pending_hq: number;
+  rejected_not_corrected: number;
+  by_market: { market_id: string; market_name: string; region_name: string; pending_supervisor: number; pending_rs: number; pending_hq: number; rejected: number }[];
+};
+
 export type CloseReadiness = {
   ready: boolean;
   checks: Record<string, number>;
   blockers: { check: string; count: number }[];
+  // Reviews never block the close; they are reported here and kept with the month.
+  flags?: CloseFlags;
 };
 
 export type Week = {
@@ -76,6 +86,9 @@ export type MetricRow = {
   gps_outlets_far: number;
   gps_outlets_no_reference: number;
   reference_fixes: number;
+  not_collected?: number;
+  synced_late?: number;
+  auto_approved?: number;
 };
 
 export type ReaderMetricRow = {
@@ -142,6 +155,9 @@ export type ReviewQuote = {
   submitted_at: string | null;
   review_count: number;
   last_review_stage: "SUPERVISOR" | "RS" | "HQ" | null;
+  synced_late?: boolean;
+  time_corrected?: boolean;
+  auto_approved?: boolean;
 };
 
 export type QuoteReview = {

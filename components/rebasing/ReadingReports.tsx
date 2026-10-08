@@ -16,7 +16,12 @@ type Summary = {
   waiting: { stage: "PENDING_SUPERVISOR" | "PENDING_RS" | "PENDING_HQ"; under_1_day: number; one_to_3_days: number; over_3_days: number }[];
   completeness: { region_id: string; region_name: string; expected: number; priced: number; not_available: number; carried: number; open: number }[];
   daily: { day: string; submitted: number; final_approved: number; rejected: number }[];
+  late: { prices_synced_late: number; prices_time_corrected: number; auto_approved: number; auto_approved_flagged: number };
+  auto_approved_flagged: { quote_id: string; market_name: string; region_name: string; outlet_name: string; product_name: string; price: string; previous_price: string | null; price_change_pct: string | null; weight_change_pct: string | null; reason_for_change: string | null }[];
+  exceptions: { reason_category: string; exceptions: number; products: number }[];
+  readers: { reader_id: string; reader_name: string; market_name: string; region_name: string; weeks: { week_no: number; completed: number; share: number | null; ended: boolean }[]; weeks_missed: number; synced_late: number; time_corrected: number }[];
 };
+const REASON_LABEL: Record<string, string> = { READER_ABSENT: "Reader absent", OUTLET_CLOSED: "Outlet closed", ACCESS_INSECURITY: "Access or insecurity", OTHER: "Other" };
 type GpsRow = { check_id: string; result: string; distance_m: number | null; region_name: string; market_name: string; outlet_name: string; reader_name: string; week_no: number | null; attempts: number };
 
 const COLORS = { priced: "#14b8a6", not_available: "#94a3b8", carried: "#7c3aed", open: "#f59e0b", submitted: "#7c3aed", approved: "#14b8a6", rejected: "#f43f5e" };
@@ -98,6 +103,13 @@ export function ReadingReports() {
           <Kpi label="Outlets away from GPS" value={number.format(totals.gps_outlets_far)} hint={`${number.format(totals.gps_outlets_no_reference)} with no reference location`} tone={totals.gps_outlets_far ? "rose" : "slate"} />
           <Kpi label="Reference fixes" value={number.format(totals.reference_fixes)} hint="Prices where the reader corrected the reference" tone="slate" />
           <Kpi label="Duplicate attempts" value={number.format(totals.duplicate_attempts)} hint="Same product priced twice at one outlet" tone="slate" />
+          {summary.data && (
+            <>
+              <Kpi label="Synced late" value={number.format(summary.data.late.prices_synced_late)} hint={`${number.format(summary.data.late.prices_time_corrected)} with a corrected phone time`} tone={summary.data.late.prices_synced_late ? "amber" : "slate"} />
+              <Kpi label="Auto-approved" value={number.format(summary.data.late.auto_approved)} hint={`${number.format(summary.data.late.auto_approved_flagged)} of them flagged for a large change`} tone={summary.data.late.auto_approved_flagged ? "rose" : "slate"} />
+              <Kpi label="Not collected" value={number.format(totals.not_collected ?? 0)} hint="Recorded by HQ / RS with a reason" tone={(totals.not_collected ?? 0) ? "rose" : "slate"} />
+            </>
+          )}
         </section>
       )}
 
@@ -182,6 +194,64 @@ export function ReadingReports() {
         <MetricTable title="By region" rows={regions.data.rows} nameKey="region_name" nameLabel="Region" file={file("regions")} />
       )}
       {markets.data && <MetricTable title="By market" rows={markets.data.rows} nameKey="market_name" nameLabel="Market" file={file("markets")} searchable />}
+
+      {summary.data && summary.data.readers.length > 0 && (
+        <Panel
+          title="Reader accountability"
+          hint="Outlets each reader completed per week against their share (the market's weekly target split equally among its readers), weeks missed and records synced late."
+          action={<CsvButton onClick={() => downloadCsv(file("reader-accountability"),
+            ["Reader", "Market", "Region", ...summary.data!.readers[0].weeks.map((w) => `Week ${w.week_no} done / share`), "Weeks missed", "Synced late", "Time corrected"],
+            summary.data!.readers.map((r) => [r.reader_name, r.market_name, r.region_name, ...r.weeks.map((w) => `${w.completed} / ${w.share ?? "-"}`), r.weeks_missed, r.synced_late, r.time_corrected]))} />}
+        >
+          <Table
+            header={["Reader", "Market", ...summary.data.readers[0].weeks.map((w) => `Week ${w.week_no}`), "Missed", "Late"]}
+            rows={[...summary.data.readers].sort((a, b) => b.weeks_missed - a.weeks_missed || b.synced_late - a.synced_late).map((r) => [
+              <span key="n" className="font-bold text-prism-text">{r.reader_name}</span>,
+              r.market_name,
+              ...r.weeks.map((w) => (
+                <span key={w.week_no} className={clsx(w.ended && w.share !== null && w.completed < w.share ? "font-bold text-rose-700" : w.share !== null && w.completed >= w.share ? "text-emerald-700" : "")}>
+                  {`${w.completed} / ${w.share ?? "–"}`}
+                </span>
+              )),
+              <span key="m" className={r.weeks_missed ? "font-bold text-rose-700" : ""}>{r.weeks_missed}</span>,
+              <span key="l" className={r.synced_late ? "font-bold text-amber-700" : ""}>{r.synced_late}</span>,
+            ])}
+          />
+        </Panel>
+      )}
+
+      {summary.data && summary.data.auto_approved_flagged.length > 0 && (
+        <Panel
+          title="Auto-approved and flagged"
+          hint="Never reviewed before their month closed, approved automatically when the next month opened, and flagged for a large price or weight change. Worth a look."
+          action={<CsvButton onClick={() => downloadCsv(file("auto-approved-flagged"), ["Market", "Region", "Outlet", "Product", "Price", "Previous", "Price change %", "Weight change %", "Reader's reason"],
+            summary.data!.auto_approved_flagged.map((q) => [q.market_name, q.region_name, q.outlet_name, q.product_name, q.price, q.previous_price, q.price_change_pct, q.weight_change_pct, q.reason_for_change]))} />}
+        >
+          <Table
+            header={["Product", "Outlet", "Price", "Previous", "Change", "Reason"]}
+            rows={summary.data.auto_approved_flagged.map((q) => [
+              <span key="p" className="font-bold text-prism-text">{q.product_name}</span>, `${q.outlet_name} · ${q.market_name}`,
+              q.price, q.previous_price ?? "—",
+              <span key="c" className="font-bold text-rose-700">{q.price_change_pct !== null ? `${Number(q.price_change_pct) > 0 ? "+" : ""}${Number(q.price_change_pct).toFixed(1)}%` : q.weight_change_pct !== null ? `weight ${Number(q.weight_change_pct).toFixed(1)}%` : "—"}</span>,
+              q.reason_for_change ?? "—",
+            ])}
+          />
+        </Panel>
+      )}
+
+      {summary.data && summary.data.exceptions.length > 0 && (
+        <Panel title="Not collected" hint="Work HQ or Regional Statisticians recorded as not collected after the last week, by reason.">
+          <div className="grid gap-3 sm:grid-cols-4">
+            {summary.data.exceptions.map((e) => (
+              <div key={e.reason_category} className="rounded-2xl border border-rose-200 bg-rose-50/60 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-wide text-rose-800">{REASON_LABEL[e.reason_category] ?? e.reason_category}</p>
+                <p className="mt-1 text-2xl font-black text-rose-900">{number.format(e.products)}</p>
+                <p className="text-[11px] text-rose-900/80">{`products · ${e.exceptions} record${e.exceptions === 1 ? "" : "s"}`}</p>
+              </div>
+            ))}
+          </div>
+        </Panel>
+      )}
 
       {readers.data && readers.data.rows.length > 0 && (
         <Panel
