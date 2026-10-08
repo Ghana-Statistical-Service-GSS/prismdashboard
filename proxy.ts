@@ -33,6 +33,22 @@ function moduleHome(request: NextRequest) {
   return request.cookies.get("prism_module")?.value === "initiation" ? "/dashboard" : "/dashboard/market-reading";
 }
 
+// The role check before restricted pages asked the backend on every
+// navigation. It is remembered per session token for a minute; the backend
+// still enforces every rule on the data itself.
+const ROLE_CACHE_MS = 60_000;
+const roles = new Map<string, { role: string | undefined; expires: number }>();
+async function roleFor(token: string) {
+  const cached = roles.get(token);
+  if (cached && cached.expires > Date.now()) return cached.role;
+  const response = await dashboardBackendRequest("/auth/me", { headers: { Authorization: `Bearer ${token}` } });
+  const body = await readBackendResponse(response);
+  const role: string | undefined = body?.user?.role;
+  if (roles.size > 500) roles.clear();
+  roles.set(token, { role, expires: Date.now() + ROLE_CACHE_MS });
+  return role;
+}
+
 export async function proxy(request: NextRequest) {
   const signedIn = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   const isLogin = request.nextUrl.pathname === "/";
@@ -46,12 +62,8 @@ export async function proxy(request: NextRequest) {
 
   if (signedIn && (isScopedRoleRestrictedPath(request.nextUrl.pathname) || isHqOnlyPath(request.nextUrl.pathname))) {
     try {
-      const token = request.cookies.get(SESSION_COOKIE)?.value;
-      const response = await dashboardBackendRequest("/auth/me", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const body = await readBackendResponse(response);
-      const role = body?.user?.role;
+      const token = request.cookies.get(SESSION_COOKIE)?.value || "";
+      const role = await roleFor(token);
       const denied = (isScopedRoleRestrictedPath(request.nextUrl.pathname) && (role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR"))
         || (isHqOnlyPath(request.nextUrl.pathname) && role !== "HQ" && role !== "ADMIN");
       if (denied) {
