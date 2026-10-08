@@ -141,6 +141,7 @@ export type ReviewQuote = {
   captured_at: string | null;
   submitted_at: string | null;
   review_count: number;
+  last_review_stage: "SUPERVISOR" | "RS" | "HQ" | null;
 };
 
 export type QuoteReview = {
