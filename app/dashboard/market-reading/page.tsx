@@ -221,7 +221,11 @@ export default function MarketReadingDashboardPage() {
                 ))}
               </nav>
 
-              {tab === "overview" && (
+              {/* Wait for the month's weeks so the figures load once, for the right week. */}
+              {tab === "overview" && periodDetail.loading && (
+                <div className="mt-6 rounded-3xl bg-white p-10 text-center text-sm text-prism-muted shadow-sm">Loading this month&apos;s figures…</div>
+              )}
+              {tab === "overview" && !periodDetail.loading && (
                 <OverviewPanel
                   key={`${period.period_id}-${weekId}-${refreshKey}`}
                   periodId={period.period_id}
