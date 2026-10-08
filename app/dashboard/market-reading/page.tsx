@@ -111,7 +111,7 @@ export default function MarketReadingDashboardPage() {
     { id: "overview", label: "Overview" },
     { id: "prices", label: "Price approvals", badge: badges.prices },
     { id: "carryovers", label: "Carry-forward", badge: badges.carryovers },
-    { id: "assignments", label: "Assignments" },
+    { id: "assignments", label: isHq ? "Assignments" : "Workload" },
   ];
 
   return (
