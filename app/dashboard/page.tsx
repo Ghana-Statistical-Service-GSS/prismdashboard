@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
 import { TablePagination } from "@/components/common/TablePagination";
-import { DashboardModeSwitch } from "@/components/dashboard/DashboardModeSwitch";
 
 type Level = "regions" | "districts" | "markets" | "users";
 
@@ -410,7 +409,6 @@ export default function DashboardPage() {
                   : "Track submitted prices from the national view down to regions, districts, markets and field users."}
               </p>
             </div>
-            <DashboardModeSwitch active="initiation" />
           </section>
 
           {loading && <div className="mt-8 rounded-3xl bg-white p-10 text-center text-sm text-prism-muted shadow-sm">Loading live initiation data…</div>}

@@ -10,6 +10,7 @@ import { useAuthActions } from "@/hooks/useAuthActions";
 import type { DashboardUser } from "@/lib/auth";
 import { loadDashboardUser } from "@/lib/dashboard-user-client";
 import { setSidebarOpen, useSidebarOpen } from "@/lib/sidebar-store";
+import { DashboardModule, moduleForPath, setDashboardModule, useDashboardModule } from "@/lib/module-store";
 
 type NavItem = {
   label: string;
@@ -25,49 +26,75 @@ type NavSection = {
   hqOnly?: boolean;
 };
 
-const navSections: NavSection[] = [
-  {
-    title: "DATA",
-    items: [
-      { label: "Dashboard", href: "/dashboard" },
-      { label: "Reports", href: "/reports" },
-      { label: "Validations", href: "/validations" },
-      { label: "SMS Alerts", href: "/sms", hiddenForScopedRole: true },
-      { label: "Email Escalations", href: "/email-alerts", hiddenForScopedRole: true },
-      { label: "Photo Album", href: "/photos" },
-      { label: "Field Officers", href: "/field-officers" },
-    ],
-  },
-  {
-    title: "CONFIGURATION",
-    hqOnly: true,
-    items: [
-      { label: "Collection Calendar", href: "/collection-calendar", hiddenForScopedRole: true },
-      { label: "Assignments", href: "/assignments", hiddenForSupervisor: true },
-      { label: "Regions", href: "/regions", hiddenForScopedRole: true },
-      { label: "Districts", href: "/districts", hiddenForScopedRole: true },
-      { label: "Markets", href: "/markets", hiddenForScopedRole: true },
-      { label: "Outlets", href: "/outlets", hiddenForScopedRole: true },
-      { label: "Items", href: "/items", hiddenForScopedRole: true },
-      { label: "Staff", href: "/staff", hiddenForScopedRole: true },
-    ],
-  },
-  {
-    title: "VALIDATE",
-    hiddenForScopedRole: true,
-    items: [
-      { label: "Validation", href: "/validation" },
-      { label: "Threshold Exception (Price)", href: "/threshold-exception" },
-      { label: "Missing Prices", href: "/missing-prices" },
-    ],
-  },
+// Shared reference data, managed by HQ, available in both modules.
+const referenceItems: NavItem[] = [
+  { label: "Regions", href: "/regions", hiddenForScopedRole: true },
+  { label: "Districts", href: "/districts", hiddenForScopedRole: true },
+  { label: "Markets", href: "/markets", hiddenForScopedRole: true },
+  { label: "Outlets", href: "/outlets", hiddenForScopedRole: true },
+  { label: "Items", href: "/items", hiddenForScopedRole: true },
+  { label: "Staff", href: "/staff", hiddenForScopedRole: true },
 ];
+
+// Each module shows only its own pages (chosen in the top bar).
+const navByModule: Record<DashboardModule, NavSection[]> = {
+  reading: [
+    {
+      title: "MARKET READING",
+      items: [
+        { label: "Dashboard", href: "/dashboard/market-reading" },
+        { label: "Workload", href: "/market-reading/workload" },
+        { label: "Reports", href: "/market-reading/reports" },
+      ],
+    },
+    {
+      title: "CONFIGURATION",
+      hqOnly: true,
+      items: [{ label: "Collection Calendar", href: "/collection-calendar", hiddenForScopedRole: true }, ...referenceItems],
+    },
+  ],
+  initiation: [
+    {
+      title: "DATA",
+      items: [
+        { label: "Dashboard", href: "/dashboard" },
+        { label: "Reports", href: "/reports" },
+        { label: "Validations", href: "/validations" },
+        { label: "SMS Alerts", href: "/sms", hiddenForScopedRole: true },
+        { label: "Email Escalations", href: "/email-alerts", hiddenForScopedRole: true },
+        { label: "Photo Album", href: "/photos" },
+        { label: "Field Officers", href: "/field-officers" },
+      ],
+    },
+    {
+      title: "CONFIGURATION",
+      hqOnly: true,
+      items: [{ label: "Assignments", href: "/assignments", hiddenForSupervisor: true }, ...referenceItems],
+    },
+    {
+      title: "VALIDATE",
+      hiddenForScopedRole: true,
+      items: [
+        { label: "Validation", href: "/validation" },
+        { label: "Threshold Exception (Price)", href: "/threshold-exception" },
+        { label: "Missing Prices", href: "/missing-prices" },
+      ],
+    },
+  ],
+};
 
 export function Sidebar() {
   const pathname = usePathname();
   const { signOut } = useAuthActions();
   const [role, setRole] = useState<DashboardUser["role"] | null>(null);
   const mobileOpen = useSidebarOpen();
+  const dashboardModule = useDashboardModule();
+
+  // A page that belongs to one module selects it (links, bookmarks, refresh).
+  useEffect(() => {
+    const owner = moduleForPath(pathname);
+    if (owner) setDashboardModule(owner);
+  }, [pathname]);
 
   useEffect(() => {
     let active = true;
@@ -89,7 +116,7 @@ export function Sidebar() {
   const isScopedRole = role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR";
   const isSupervisor = role === "SUPERVISOR";
   const isHq = role === "HQ" || role === "ADMIN";
-  const visibleSections = navSections
+  const visibleSections = navByModule[dashboardModule]
     .filter((section) => !(section.hiddenForScopedRole && (isScopedRole || role === null)) && !(section.hqOnly && !isHq))
     .map((section) => ({
       ...section,
@@ -130,7 +157,7 @@ export function Sidebar() {
             <ul className="space-y-1">
               {section.items.map((item) => {
                 const active =
-                  item.href && pathname.startsWith(item.href ?? "");
+                  !!item.href && (pathname === item.href || pathname.startsWith(`${item.href}/`));
                 return (
                   <li key={item.label}>
                       <Link

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import type { DashboardUser } from "@/lib/auth";
@@ -17,7 +18,6 @@ type BoardMarket = {
   market_id: string; market_code: string | null; market_name: string; district_name: string; region_name: string; readers: BoardReader[];
   total_outlets: number | null; week1_target: number | null; week2_target: number | null; week3_target: number | null;
 };
-type WorkloadWeek = { week_id: string; week_no: number; start_date: string; end_date: string; target: number; accounted: number; incoming: number; editable: boolean; minimum: number };
 type Unassigned = { reader_id: string; reader_name: string; reader_email: string; home_market_id: string; home_market_name: string };
 type Board = { scope: string; period_status: string; can_change: boolean; can_manage_workload: boolean; markets: BoardMarket[]; unassigned_readers: Unassigned[] };
 
@@ -26,12 +26,11 @@ type Action =
   | { kind: "remove"; reader: BoardReader; from: BoardMarket }
   | { kind: "add"; market: BoardMarket | null; reader: Unassigned | null };
 
-export function AssignmentsPanel({ periodId, periodName, role }: { periodId: string; periodName: string; role: DashboardUser["role"] }) {
+export function AssignmentsPanel({ periodId, periodName }: { periodId: string; periodName: string; role?: DashboardUser["role"] }) {
   const [version, setVersion] = useState(0);
   const board = useRebasingQuery<Board>(`/market-assignments/board?periodId=${periodId}`, version);
   const [search, setSearch] = useState("");
   const [action, setAction] = useState<Action | null>(null);
-  const [balancing, setBalancing] = useState<BoardMarket | null>(null);
   const [notice, setNotice] = useState("");
   const data = board.data;
 
@@ -54,7 +53,6 @@ export function AssignmentsPanel({ periodId, periodName, role }: { periodId: str
     };
   }, [data]);
 
-  const scopeText = role === "SUPERVISOR" ? "your markets" : role === "REGIONAL_STATISTICIAN" ? "your region" : "all markets";
 
   return (
     <section className="mt-6 space-y-4">
@@ -64,7 +62,7 @@ export function AssignmentsPanel({ periodId, periodName, role }: { periodId: str
           {data?.can_change
             ? "Every reader starts in their home market. Change only where needed - move a reader, remove one who is unavailable, or add one to a market. "
             : "Readers are assigned to markets by HQ. "}
-          {data?.can_manage_workload ? `Balance the workload in ${scopeText}: how many outlets each market collects in each week. ` : ""}
+          {data?.can_manage_workload ? <>The weekly split of outlets is managed on the <Link href="/market-reading/workload" className="font-bold text-prism-purple underline">Workload</Link> page. </> : null}
           Each change needs a reason and is recorded.
         </p>
         <dl className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
@@ -114,9 +112,6 @@ export function AssignmentsPanel({ periodId, periodName, role }: { periodId: str
                       <span className="rounded-full bg-prism-teal/10 px-2 py-0.5 text-[10px] font-bold text-teal-800">
                         {`W1 ${m.week1_target} · W2 ${m.week2_target} · W3 ${m.week3_target} of ${m.total_outlets} outlets`}
                       </span>
-                      {data.can_manage_workload && (
-                        <button type="button" onClick={() => setBalancing(m)} className="rounded-full px-2 py-0.5 text-[10px] font-bold text-prism-purple hover:bg-prism-purple/10">Balance weeks…</button>
-                      )}
                     </div>
                   )}
                 </div>
@@ -145,15 +140,6 @@ export function AssignmentsPanel({ periodId, periodName, role }: { periodId: str
             {!markets.length && <li className="p-8 text-center text-xs text-prism-muted">No markets match.</li>}
           </ul>
         </div>
-      )}
-
-      {balancing && (
-        <WorkloadDialog
-          periodId={periodId}
-          market={balancing}
-          onClose={() => setBalancing(null)}
-          onDone={(message) => { setBalancing(null); setNotice(message); setVersion((v) => v + 1); }}
-        />
       )}
 
       {action && data && (
@@ -277,102 +263,6 @@ function ChangeDialog({ action, periodId, markets, unassigned, onClose, onDone }
           <button type="submit" disabled={!!problem || busy} title={problem} className={clsx("rounded-full px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40", action.kind === "remove" ? "bg-rose-600" : "bg-prism-purple")}>
             {busy ? "Saving…" : action.kind === "move" ? "Move reader" : action.kind === "remove" ? "Remove reader" : "Assign reader"}
           </button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-// Spread a market's outlets across the weeks. The total never changes; a
-// finished week keeps its target and no week can drop below what it has
-// already accounted for (the server enforces the same rules).
-function WorkloadDialog({ periodId, market, onClose, onDone }: {
-  periodId: string;
-  market: BoardMarket;
-  onClose: () => void;
-  onDone: (message: string) => void;
-}) {
-  const workload = useRebasingQuery<{ weeks: WorkloadWeek[] }>(`/periods/${periodId}/market-plans/${market.market_id}/workload`);
-  const weeks = workload.data?.weeks || [];
-  const [draft, setDraft] = useState<number[] | null>(null);
-  const [reason, setReason] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const targets = draft ?? weeks.map((w) => w.target);
-  const total = market.total_outlets ?? 0;
-  const sum = targets.reduce((a, b) => a + (Number.isFinite(b) ? b : 0), 0);
-  const changed = weeks.some((w, i) => targets[i] !== w.target);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape" && !busy) onClose(); };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onClose]);
-
-  const problem = !weeks.length ? ""
-    : !changed ? "Change at least one week."
-      : weeks.find((w, i) => !Number.isInteger(targets[i]) || targets[i] < 0) ? "Use whole numbers."
-        : sum !== total ? `The weeks must add up to ${total} outlets (now ${sum}).`
-          : weeks.find((w, i) => targets[i] < w.minimum) ? `A week cannot go below the outlets it has already covered.`
-            : reason.trim().length < 5 ? "Give a reason (at least 5 characters)." : "";
-
-  const submit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    if (problem || busy) return;
-    setBusy(true);
-    setError("");
-    try {
-      await rebasingApi(`/periods/${periodId}/market-plans/${market.market_id}/week-targets`, { method: "PATCH", body: { targets, reason: reason.trim() } });
-      onDone(`${market.market_name}: weeks now ${targets.join(" · ")} outlets.`);
-    } catch (failure) {
-      setError(failure instanceof Error ? failure.message : "The workload could not be saved.");
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}>
-      <form method="post" onSubmit={submit} role="dialog" aria-modal="true" aria-label={`Balance weeks for ${market.market_name}`} className="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-prism-teal">Weekly workload</p>
-            <h2 className="mt-1 text-lg font-black text-prism-text">{market.market_name}</h2>
-            <p className="mt-0.5 text-xs text-prism-muted">{`${total} outlets this month, spread across the three weeks.`}</p>
-          </div>
-          <button type="button" onClick={onClose} disabled={busy} aria-label="Close" className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-prism-bg text-lg font-bold text-prism-muted disabled:opacity-40">×</button>
-        </div>
-        {workload.loading && !weeks.length && <p className="mt-4 text-xs text-prism-muted">Loading weeks…</p>}
-        {workload.error && <p role="alert" className="mt-4 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{workload.error}</p>}
-        <div className="mt-4 grid grid-cols-3 gap-2">
-          {weeks.map((w, i) => (
-            <label key={w.week_id} className={clsx("rounded-2xl border p-3", w.editable ? "border-prism-border" : "border-slate-200 bg-slate-50")}>
-              <span className="block text-xs font-black text-prism-text">{`Week ${w.week_no}`}</span>
-              <span className="block text-[10px] text-prism-muted">{w.editable ? `${w.accounted} covered` : "Finished"}</span>
-              <input
-                type="number"
-                inputMode="numeric"
-                min={w.minimum}
-                max={total}
-                value={Number.isFinite(targets[i]) ? targets[i] : ""}
-                disabled={!w.editable || busy}
-                onChange={(e) => setDraft(targets.map((t, j) => (j === i ? Number.parseInt(e.target.value, 10) : t)))}
-                className="mt-2 w-full rounded-xl border border-prism-border px-2 py-2 text-center text-lg font-black text-prism-text disabled:bg-transparent disabled:text-prism-muted"
-              />
-            </label>
-          ))}
-        </div>
-        {weeks.length > 0 && (
-          <p className={clsx("mt-2 text-xs font-bold", sum === total ? "text-emerald-700" : "text-amber-700")}>{`Total ${sum} / ${total}`}</p>
-        )}
-        <label className="mt-3 block">
-          <span className="text-[11px] font-bold text-prism-muted">Reason</span>
-          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder="e.g. Market day falls in week 3" className="mt-1 w-full rounded-xl border border-prism-border px-3 py-2 text-sm" />
-        </label>
-        {problem && changed && <p className="mt-2 text-xs font-semibold text-red-700">{problem}</p>}
-        {error && <p role="alert" className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
-        <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-          <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-prism-border px-4 py-2.5 text-sm font-semibold text-prism-text disabled:opacity-40">Cancel</button>
-          <button type="submit" disabled={!!problem || busy} title={problem} className="rounded-full bg-prism-purple px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40">{busy ? "Saving…" : "Save weeks"}</button>
         </div>
       </form>
     </div>

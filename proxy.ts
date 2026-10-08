@@ -27,6 +27,12 @@ function isHqOnlyPath(pathname: string) {
   return HQ_ONLY_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
 }
 
+// Where the dashboard opens: the module chosen in the top bar (cookie set by
+// lib/module-store), Market Reading by default.
+function moduleHome(request: NextRequest) {
+  return request.cookies.get("prism_module")?.value === "initiation" ? "/dashboard" : "/dashboard/market-reading";
+}
+
 export async function proxy(request: NextRequest) {
   const signedIn = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   const isLogin = request.nextUrl.pathname === "/";
@@ -35,7 +41,7 @@ export async function proxy(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
   if (signedIn && isLogin) {
-    return NextResponse.redirect(new URL("/dashboard", request.url));
+    return NextResponse.redirect(new URL(moduleHome(request), request.url));
   }
 
   if (signedIn && (isScopedRoleRestrictedPath(request.nextUrl.pathname) || isHqOnlyPath(request.nextUrl.pathname))) {
