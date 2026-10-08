@@ -29,7 +29,8 @@ export default function LoginPage() {
         return;
       }
       clearDashboardUser();
-      router.replace("/dashboard");
+      // Opens the module last chosen in the top bar; Market Reading by default.
+      router.replace(document.cookie.includes("prism_module=initiation") ? "/dashboard" : "/dashboard/market-reading");
       router.refresh();
     } catch {
       setError("The authentication service is unavailable. Please try again.");

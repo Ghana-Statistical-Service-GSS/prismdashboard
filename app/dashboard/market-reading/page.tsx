@@ -4,7 +4,6 @@ import { useCallback, useEffect, useState } from "react";
 import clsx from "clsx";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { Topbar } from "@/components/layout/Topbar";
-import { DashboardModeSwitch } from "@/components/dashboard/DashboardModeSwitch";
 import { OverviewPanel } from "@/components/rebasing/OverviewPanel";
 import { PriceReviewPanel } from "@/components/rebasing/PriceReviewPanel";
 import { CarryForwardPanel } from "@/components/rebasing/CarryForwardPanel";
@@ -111,7 +110,7 @@ export default function MarketReadingDashboardPage() {
     { id: "overview", label: "Overview" },
     { id: "prices", label: "Price approvals", badge: badges.prices },
     { id: "carryovers", label: "Carry-forward", badge: badges.carryovers },
-    { id: "assignments", label: isHq ? "Assignments" : "Workload" },
+    ...(isHq ? [{ id: "assignments" as Tab, label: "Assignments" }] : []),
   ];
 
   return (
@@ -132,7 +131,6 @@ export default function MarketReadingDashboardPage() {
                     : "National weekly outlet progress and the final stage of price approval."}
               </p>
             </div>
-            <DashboardModeSwitch active="reading" />
           </section>
 
           {(error || periodDetail.error) && <div role="alert" className="mt-6 rounded-3xl border border-red-200 bg-red-50 p-5 text-sm text-red-700">{error || periodDetail.error}</div>}
