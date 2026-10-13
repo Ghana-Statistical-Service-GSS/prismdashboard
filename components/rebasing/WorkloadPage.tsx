@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import clsx from "clsx";
 import type { DashboardUser } from "@/lib/auth";
 import { loadDashboardUser } from "@/lib/dashboard-user-client";
+import { TablePagination } from "@/components/common/TablePagination";
 import { Period, formatDateTime, formatDay, number, periodLabel, rebasingApi } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
 import { UnfinishedWork } from "./UnfinishedWork";
@@ -47,6 +48,8 @@ export function WorkloadPage() {
   const [search, setSearch] = useState("");
   const [region, setRegion] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "changed" | "behind">("all");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<10 | 20>(20);
   const [view, setView] = useState<"plan" | "unfinished">(useSearchParams().get("view") === "unfinished" ? "unfinished" : "plan");
 
   useEffect(() => { loadDashboardUser().then(setUser).catch(() => {}); }, []);
@@ -74,6 +77,10 @@ export function WorkloadPage() {
       return true;
     });
   }, [data, search, region, filter, currentWeekIndex]);
+
+  const totalPages = Math.max(1, Math.ceil(markets.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageMarkets = markets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const totals = useMemo(() => {
     const rows = data?.markets || [];
@@ -157,22 +164,22 @@ export function WorkloadPage() {
                 <p className="text-xs text-prism-muted">{`${number.format(markets.length)} of ${number.format(data.markets.length)} markets`}{!data.can_edit ? " · this month is not open, so the plan is read-only" : ""}</p>
               </div>
               <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-                <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search market, district or region" className="rounded-xl border border-prism-border px-3 py-2 text-sm sm:w-64" />
+                <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search market, district or region" className="rounded-xl border border-prism-border px-3 py-2 text-sm sm:w-64" />
                 {regions.length > 1 && (
-                  <select value={region} onChange={(e) => setRegion(e.target.value)} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-sm">
+                  <select value={region} onChange={(e) => { setRegion(e.target.value); setPage(1); }} className="rounded-xl border border-prism-border bg-white px-3 py-2 text-sm">
                     <option value="">All regions</option>
                     {regions.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
                   </select>
                 )}
                 <div className="inline-flex rounded-full bg-prism-bg p-1">
                   {([["all", "All"], ["behind", "Behind this week"], ["pending", "Waiting approval"], ["changed", "Changed"]] as const).map(([key, label]) => (
-                    <button key={key} type="button" onClick={() => setFilter(key)} className={clsx("rounded-full px-3 py-1.5 text-[11px] font-bold", filter === key ? "bg-white text-prism-purple shadow-sm" : "text-prism-muted")}>{label}</button>
+                    <button key={key} type="button" onClick={() => { setFilter(key); setPage(1); }} className={clsx("rounded-full px-3 py-1.5 text-[11px] font-bold", filter === key ? "bg-white text-prism-purple shadow-sm" : "text-prism-muted")}>{label}</button>
                   ))}
                 </div>
               </div>
             </div>
             <ul className="divide-y divide-prism-border/60">
-              {markets.map((m) => (
+              {pageMarkets.map((m) => (
                 <li key={m.market_id} className="grid gap-3 px-4 py-4 sm:px-5 md:grid-cols-[minmax(0,1fr)_minmax(0,1.6fr)_auto] md:items-center">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-black text-prism-text">{m.market_name}</p>
@@ -205,6 +212,9 @@ export function WorkloadPage() {
               ))}
               {markets.length === 0 && <li className="p-10 text-center text-sm text-prism-muted">No markets match these filters.</li>}
             </ul>
+            {markets.length > pageSize && (
+              <TablePagination page={currentPage} pageSize={pageSize} total={markets.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
+            )}
           </section>
         </>
       )}

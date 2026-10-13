@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import clsx from "clsx";
 import type { DashboardUser } from "@/lib/auth";
 import { TablePagination } from "@/components/common/TablePagination";
+import { TableSearch } from "@/components/common/TableSearch";
 import { Decision, DecisionDialog } from "./DecisionDialog";
 import { QuoteDetailDrawer } from "./QuoteDetailDrawer";
 import { RebasingApiError, ReviewQuote, ReviewStatus, formatDateTime, formatMoney, number, rebasingApi } from "./api";
@@ -22,16 +23,28 @@ const STATUS_CHIP: Record<ReviewStatus, { label: string; className: string }> = 
 };
 const STAGE_NAME = { SUPERVISOR: "Supervisor", RS: "Regional Statistician", HQ: "HQ" } as const;
 
+// Prices the Supervisor has not approved yet stand out on every card, in
+// every view and for every role - a clear coloured line, not just a chip.
+const notSupervisorApproved = (quote: ReviewQuote) => quote.review_status === "PENDING_SUPERVISOR";
+function NotSupervisorApproved() {
+  return (
+    <p className="mb-3 flex items-center gap-2 rounded-xl bg-orange-50 px-3 py-2 text-xs font-black text-orange-700 ring-1 ring-orange-300">
+      <span aria-hidden className="h-2 w-2 shrink-0 rounded-full bg-orange-500" />
+      Not yet approved by the Supervisor
+    </p>
+  );
+}
+
 // The backend gives each role one review endpoint; its queue is what that
 // stage can act on (the RS may act before the Supervisor).
 const STAGE_BY_ROLE: Record<DashboardUser["role"], { path: "supervisor" | "rs" | "hq"; title: string; subtitle: string; approveLabel: string }> = {
-  SUPERVISOR: { path: "supervisor", title: "Pending price review · Supervisor queue", subtitle: "New prices from Market Readers in your markets. Approving sends them to the Regional Statistician.", approveLabel: "Approve" },
+  SUPERVISOR: { path: "supervisor", title: "Pending price review · Supervisor queue", subtitle: "New prices from Market Readers in your markets. Approving sends them to the Regional Statistician. Prices the Regional Statistician or HQ approve first leave this list - see them under All prices.", approveLabel: "Approve" },
   REGIONAL_STATISTICIAN: { path: "rs", title: "Pending price review · Regional queue", subtitle: "Prices from your region. Approve after the Supervisor, or act first when needed - the price then goes straight to HQ and the Supervisor sees it as approved by you.", approveLabel: "Approve" },
-  HQ: { path: "hq", title: "Pending final approval", subtitle: "Prices approved by Regional Statisticians. Final approval makes them official and eligible as next month's reference.", approveLabel: "Final approve" },
-  ADMIN: { path: "hq", title: "Pending final approval", subtitle: "Prices approved by Regional Statisticians. Final approval makes them official and eligible as next month's reference.", approveLabel: "Final approve" },
+  HQ: { path: "hq", title: "Pending final approval", subtitle: "Every price still in review. HQ may final-approve at any stage, even before the Supervisor or Regional Statistician - after that no one else can change it. Final approval makes a price official and eligible as next month's reference.", approveLabel: "Final approve" },
+  ADMIN: { path: "hq", title: "Pending final approval", subtitle: "Every price still in review. HQ may final-approve at any stage, even before the Supervisor or Regional Statistician - after that no one else can change it. Final approval makes a price official and eligible as next month's reference.", approveLabel: "Final approve" },
 };
 
-// The status a role's own stage normally acts on (the RS also sees PENDING_SUPERVISOR).
+// The status a role's own stage normally acts on (the RS and HQ may also act on earlier stages).
 const stageStatus = (role: DashboardUser["role"]): ReviewStatus =>
   role === "SUPERVISOR" ? "PENDING_SUPERVISOR" : role === "REGIONAL_STATISTICIAN" ? "PENDING_RS" : "PENDING_HQ";
 
@@ -51,6 +64,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   const [pageSize, setPageSize] = useState<10 | 20>(20);
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [view, setView] = useState<"queue" | "all">("queue");
+  const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [approving, setApproving] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -65,6 +79,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   const params = new URLSearchParams({ periodId, page: String(page), pageSize: String(pageSize) });
   if (flaggedOnly) params.set("flagged", "true");
   if (view === "all") params.set("view", "all");
+  if (search.trim()) params.set("search", search.trim());
   const queue = useRebasingQuery<QueueResponse>(`/price-reviews?${params}`, reloadKey);
   const { loading, error } = queue;
   // Only hide decided quotes until the refetch lands; after that the server is
@@ -74,6 +89,8 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   const total = Math.max((queue.data?.total || 0) - ((queue.data?.quotes.length || 0) - quotes.length), 0);
   const actionable = new Set<ReviewStatus>(queue.data?.actionable_statuses || []);
   const canAct = (quote: ReviewQuote) => actionable.has(quote.review_status);
+  // A closed month's prices can be approved but not rejected (the reader can no longer correct them).
+  const canReject = (quote: ReviewQuote) => canAct(quote) && quote.period_status !== "CLOSED";
   const selectable = quotes.filter(canAct);
   const selectedIds = selectable.filter((quote) => selected.has(quote.quote_id)).map((quote) => quote.quote_id);
   const toggle = (id: string) => setSelected((current) => {
@@ -158,10 +175,13 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
       </div>
 
       <div className="flex flex-col gap-2 border-b border-prism-border/60 px-5 py-3 sm:flex-row sm:items-center sm:justify-between">
-        <div className="inline-flex rounded-full bg-prism-bg p-1">
-          {([["queue", "To review"], ["all", "All prices"]] as const).map(([key, label]) => (
-            <button key={key} type="button" onClick={() => { setView(key); setPage(1); setSelected(new Set()); }} className={clsx("rounded-full px-4 py-1.5 text-xs font-bold", view === key ? "bg-white text-prism-purple shadow-sm" : "text-prism-muted")}>{label}</button>
-          ))}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <div className="inline-flex self-start rounded-full bg-prism-bg p-1">
+            {([["queue", "To review"], ["all", "All prices"]] as const).map(([key, label]) => (
+              <button key={key} type="button" onClick={() => { setView(key); setPage(1); setSelected(new Set()); }} className={clsx("rounded-full px-4 py-1.5 text-xs font-bold", view === key ? "bg-white text-prism-purple shadow-sm" : "text-prism-muted")}>{label}</button>
+            ))}
+          </div>
+          <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); setSelected(new Set()); }} placeholder="Search product, outlet, market or reader" className="sm:w-72" />
         </div>
         {selectable.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -182,7 +202,8 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
 
       <div className={`grid gap-4 p-4 sm:p-5 xl:grid-cols-2 ${loading ? "opacity-60" : ""}`}>
         {quotes.map((quote) => (
-          <article key={quote.quote_id} className={clsx("flex flex-col rounded-2xl border p-4", quote.price_change_flagged || quote.weight_change_flagged ? "border-rose-200 bg-rose-50/40" : "border-prism-border/70", approving.has(quote.quote_id) && "opacity-50")}>
+          <article key={quote.quote_id} className={clsx("flex flex-col rounded-2xl border p-4", quote.price_change_flagged || quote.weight_change_flagged ? "border-rose-200 bg-rose-50/40" : notSupervisorApproved(quote) ? "border-orange-300" : "border-prism-border/70", approving.has(quote.quote_id) && "opacity-50")}>
+            {notSupervisorApproved(quote) && <NotSupervisorApproved />}
             <div className="flex items-start justify-between gap-3">
               {canAct(quote) && (
                 <input type="checkbox" aria-label={`Select ${quote.product_name}`} className="mt-1 accent-prism-purple" checked={selected.has(quote.quote_id)} onChange={() => toggle(quote.quote_id)} />
@@ -227,7 +248,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
             </dl>
 
             <div className="mt-2 flex flex-wrap gap-1.5">
-              {(view === "all" || quote.review_status !== stageStatus(role)) && (
+              {(view === "all" || quote.review_status !== stageStatus(role)) && !notSupervisorApproved(quote) && (
                 <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${STATUS_CHIP[quote.review_status].className}`}>
                   {STATUS_CHIP[quote.review_status].label}
                 </span>
@@ -250,7 +271,11 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
               <button type="button" onClick={() => setDetailId(quote.quote_id)} className="rounded-full border border-prism-border px-3 py-2.5 text-xs font-bold text-prism-text hover:bg-prism-bg">Details</button>
               {canAct(quote) && (
                 <>
-                  <button type="button" disabled={approving.has(quote.quote_id)} onClick={() => setPending({ quote, decision: "REJECTED" })} className="rounded-full bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 disabled:opacity-40">Reject</button>
+                  {canReject(quote) ? (
+                    <button type="button" disabled={approving.has(quote.quote_id)} onClick={() => setPending({ quote, decision: "REJECTED" })} className="rounded-full bg-rose-50 px-3 py-2.5 text-xs font-bold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-100 disabled:opacity-40">Reject</button>
+                  ) : (
+                    <span className="grid place-items-center rounded-full bg-slate-50 px-2 text-center text-[10px] font-bold text-prism-muted" title="This month is closed; its prices can only be approved">Month closed</span>
+                  )}
                   <button type="button" disabled={approving.has(quote.quote_id)} onClick={() => void quickApprove(quote)} className="rounded-full bg-teal-600 px-3 py-2.5 text-xs font-bold text-white hover:bg-teal-700 disabled:opacity-60">
                     {approving.has(quote.quote_id) ? "Approving…" : stage.approveLabel}
                   </button>
@@ -260,7 +285,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           </article>
         ))}
         {!loading && quotes.length === 0 && !error && (
-          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}.</p>
+          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}.</p>
         )}
       </div>
 
@@ -276,6 +301,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           summary={
             <div className="space-y-1">
               <p><strong>{pending.quote.outlet_name}</strong>, {pending.quote.market_name}</p>
+              {notSupervisorApproved(pending.quote) && role !== "SUPERVISOR" && <p className="font-black text-orange-700">The Supervisor has not approved this price yet.</p>}
               {pending.quote.reference_fixed && <p className="font-bold text-amber-800">The reader fixed the reference: {pending.quote.reference_fix_reason}</p>}
               <p>Previous {formatMoney(pending.quote.previous_price)} · <ChangeChip pct={pending.quote.price_change_pct} flagged={pending.quote.price_change_flagged} /></p>
               <p className="text-prism-muted">Collected by {pending.quote.reader_name}</p>
@@ -290,7 +316,9 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
         <QuoteDetailDrawer
           quoteId={detailId}
           approveLabel={stage.approveLabel}
-          onDecide={detailQuote && canAct(detailQuote) ? (decision) => setPending({ quote: detailQuote, decision }) : undefined}
+          onDecide={detailQuote && canAct(detailQuote)
+            ? (decision) => { if (decision === "APPROVED" || canReject(detailQuote)) setPending({ quote: detailQuote, decision }); }
+            : undefined}
           onClose={() => setDetailId(null)}
         />
       )}

@@ -2,6 +2,9 @@
 
 import { useState } from "react";
 import type { DashboardUser } from "@/lib/auth";
+import { TablePagination } from "@/components/common/TablePagination";
+import { TableSearch } from "@/components/common/TableSearch";
+import { useTableControls } from "@/components/common/useTableControls";
 import { MetricRow, ReaderMetricRow, number, percent } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
 
@@ -101,6 +104,13 @@ export function OverviewPanel({ periodId, weekId, role, onOpenReviews, onOpenCar
   const breakdown = useRebasingQuery<ProgressResponse<MetricRow | ReaderMetricRow>>(`/progress?periodId=${periodId}&groupBy=${groupBy}${weekQuery}`);
   const totals = national.data ? national.data.rows[0] || ZERO : null;
   const rows = breakdown.data?.rows || [];
+  // Areas: lowest coverage first across the whole list, then searched and paged.
+  const ordered = groupBy === "reader" ? rows : [...(rows as MetricRow[])].sort((a, b) =>
+    percent(a.accounted_outlets, a.operational_workload) - percent(b.accounted_outlets, b.operational_workload));
+  const table = useTableControls<MetricRow | ReaderMetricRow>(ordered, (row) => {
+    const r = row as Partial<MetricRow & ReaderMetricRow>;
+    return [r.region_name, r.market_name, r.reader_name].filter(Boolean).join(" ");
+  });
   const loading = national.loading;
   const breakdownLoading = breakdown.loading;
   const error = national.error || breakdown.error;
@@ -138,18 +148,34 @@ export function OverviewPanel({ periodId, weekId, role, onOpenReviews, onOpenCar
           </div>
           <div className="flex gap-2 overflow-x-auto">
             {groupings.map((item) => (
-              <button key={item} type="button" onClick={() => setGroupBy(item)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold capitalize transition ${groupBy === item ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
+              <button key={item} type="button" onClick={() => { setGroupBy(item); table.setQuery(""); }} className={`shrink-0 rounded-full px-4 py-2 text-xs font-bold capitalize transition ${groupBy === item ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
                 {item}s
               </button>
             ))}
           </div>
         </div>
+        {rows.length > 0 && (
+          <div className="border-b border-prism-border/60 px-5 py-3">
+            <TableSearch
+              key={groupBy}
+              value={table.query}
+              onChange={table.setQuery}
+              delayMs={150}
+              placeholder={groupBy === "reader" ? "Search reader, market or region" : groupBy === "market" ? "Search market or region" : "Search region"}
+              className="sm:w-72"
+            />
+          </div>
+        )}
         <div className={breakdownLoading ? "opacity-60" : ""}>
           {groupBy === "reader"
-            ? <ReaderBreakdown rows={rows as ReaderMetricRow[]} />
-            : <AreaBreakdown rows={rows as MetricRow[]} groupBy={groupBy} />}
+            ? <ReaderBreakdown rows={table.pageRows as ReaderMetricRow[]} />
+            : <AreaBreakdown rows={table.pageRows as MetricRow[]} groupBy={groupBy} />}
           {!breakdownLoading && rows.length === 0 && <p className="px-5 py-10 text-center text-xs text-prism-muted">No records for this selection.</p>}
+          {rows.length > 0 && table.total === 0 && <p className="px-5 py-10 text-center text-xs text-prism-muted">{`Nothing matches “${table.query}”.`}</p>}
         </div>
+        {table.total > table.pageSize && (
+          <TablePagination page={table.page} pageSize={table.pageSize} total={table.total} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />
+        )}
       </section>
     </div>
   );

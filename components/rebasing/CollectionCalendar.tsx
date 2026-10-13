@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { TablePagination } from "@/components/common/TablePagination";
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import type { DashboardUser } from "@/lib/auth";
@@ -55,16 +56,19 @@ function suggestNormalWeeks(month: string): DateRange[] {
   const start = firstMonday < todayIso() ? todayIso() : firstMonday;
   return [0, 1, 2].map((i) => ({ startDate: addDays(start, i * 7), endDate: addDays(start, i * 7 + 6) }));
 }
-function suggestBackfillWindow(month: string): DateRange[] {
+// A backfill (catch-up) month also runs in three 7-day weeks, from today -
+// normally the same weeks as the current month it runs beside.
+function suggestBackfillWeeks(month: string): DateRange[] {
   const start = todayIso() < `${month}-01` ? `${month}-01` : todayIso();
-  return [{ startDate: start, endDate: addDays(start, 13) }];
+  return [0, 1, 2].map((i) => ({ startDate: addDays(start, i * 7), endDate: addDays(start, i * 7 + 6) }));
 }
+const weekName = (weeks: unknown[], i: number) => (weeks.length > 1 ? `Week ${i + 1}` : "Catch-up window");
 
 // Mirrors the server's week rules.
 function validateWeeks(type: Period["period_type"], month: string, weeks: DateRange[]) {
   if (!month) return "Choose the observation month.";
   for (const [i, w] of weeks.entries()) {
-    const name = type === "NORMAL" ? `Week ${i + 1}` : "The catch-up window";
+    const name = weeks.length > 1 ? `Week ${i + 1}` : "The catch-up window";
     if (!w.startDate || !w.endDate) return `${name} needs a start and end date.`;
     if (w.endDate < w.startDate) return `${name} ends before it starts.`;
   }
@@ -422,6 +426,7 @@ function WeekSegment({ period, week, busy, run }: {
   run: (key: string, action: () => Promise<string | void>) => Promise<void>;
 }) {
   const [editing, setEditing] = useState(false);
+  const [closingEarly, setClosingEarly] = useState(false);
   const [start, setStart] = useState(week.start_date);
   const [end, setEnd] = useState(week.end_date);
   const state = WEEK_STATE[week.effective_status];
@@ -435,13 +440,22 @@ function WeekSegment({ period, week, busy, run }: {
     return `${name} now runs ${formatDay(start)} – ${formatDay(end)}.`;
   });
 
+  // A week that has not reached its end date only closes with an explicit
+  // "close early" and a reason (the server enforces the same).
+  const notEnded = week.end_date >= todayIso();
   const closeWeek = () => {
-    if (!window.confirm(`Close ${name} of ${nameOf(period)}?\n\nReaders can no longer submit work for it - prices captured offline for it will be refused at sync. This cannot be undone.`)) return;
+    if (notEnded) { setClosingEarly(true); return; }
+    if (!window.confirm(`Close ${name} of ${nameOf(period)}?\n\nNo new outlets can be started for it. Work readers captured during the week is still accepted (marked "synced late") until the month closes. This cannot be undone.`)) return;
     void run(`close-${week.week_id}`, async () => {
       await rebasingApi(`/periods/${period.period_id}/weeks/${week.week_id}/close`, { method: "POST", body: {} });
       return `${name} is closed.`;
     });
   };
+  const closeEarly = (reason: string) => run(`close-${week.week_id}`, async () => {
+    await rebasingApi(`/periods/${period.period_id}/weeks/${week.week_id}/close`, { method: "POST", body: { early: true, reason } });
+    setClosingEarly(false);
+    return `${name} is closed early.`;
+  });
 
   return (
     <li className={clsx("rounded-2xl border p-4", week.effective_status === "ACTIVE" ? "border-emerald-300 bg-emerald-50/40" : "border-prism-border/70 bg-white")}>
@@ -472,6 +486,16 @@ function WeekSegment({ period, week, busy, run }: {
             <Button variant="primary" disabled={!!problem} busy={busy === `week-${week.week_id}`} onClick={() => void save()}>Save</Button>
           </div>
         </div>
+      )}
+      {closingEarly && (
+        <EarlyCloseDialog
+          title={`Close ${name} early?`}
+          warning={`${name} of ${nameOf(period)} runs until ${formatDay(week.end_date)}. Closing it now stops new outlets for this week before its dates are over.`}
+          confirmLabel="Close this week early"
+          busy={busy === `close-${week.week_id}`}
+          onCancel={() => setClosingEarly(false)}
+          onConfirm={(reason) => void closeEarly(reason)}
+        />
       )}
     </li>
   );
@@ -542,7 +566,9 @@ function UpcomingPeriodCard({ period, waitingFor, onChanged }: { period: Period;
   return (
     <Card
       period={period}
-      meta={type === "BACKFILL" ? "One catch-up window · readers choose this month per outlet while it is open" : "Three collection weeks · weekly targets are set when it opens"}
+      meta={type === "BACKFILL"
+        ? (weeks.length > 1 ? "Three catch-up weeks · weekly targets are set when it opens · readers finish this month first at each outlet" : "One catch-up window · readers choose this month per outlet while it is open")
+        : "Three collection weeks · weekly targets are set when it opens"}
       footer={<>
         <p className={clsx("text-xs font-semibold", blocked ? "text-prism-muted" : dirty ? "text-amber-700" : "text-emerald-700")}>
           {blocked ? `Waiting for ${nameOf(blocked)} to close before opening.` : dirty ? "Save the dates before opening." : "Ready to open."}
@@ -557,7 +583,7 @@ function UpcomingPeriodCard({ period, waitingFor, onChanged }: { period: Period;
         {dates.map((d, i) => (
           <div key={weeks[i]?.week_id ?? i} className="rounded-2xl border border-prism-border/70 p-4">
             <div className="flex items-center justify-between">
-              <p className="text-sm font-black text-prism-text">{type === "NORMAL" ? `Week ${i + 1}` : "Catch-up window"}</p>
+              <p className="text-sm font-black text-prism-text">{weekName(dates, i)}</p>
               {d.startDate && d.endDate && d.endDate >= d.startDate && <span className="text-[11px] text-prism-muted">{dayCount(d.startDate, d.endDate)} days</span>}
             </div>
             <div className="mt-3 space-y-2">
@@ -571,7 +597,7 @@ function UpcomingPeriodCard({ period, waitingFor, onChanged }: { period: Period;
       {problem && <p className="mt-3 text-xs font-semibold text-red-700">{problem}</p>}
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
-        <Button variant="ghost" onClick={() => setDraft(type === "NORMAL" ? suggestNormalWeeks(month) : suggestBackfillWindow(month))}>Suggest dates</Button>
+        <Button variant="ghost" disabled={dates.length !== 3} onClick={() => setDraft(type === "NORMAL" ? suggestNormalWeeks(month) : suggestBackfillWeeks(month))}>Suggest dates</Button>
         {dirty && <Button variant="ghost" onClick={() => setDraft(null)}>Undo changes</Button>}
         <Button variant="ghost" disabled={busy} onClick={() => setChangingType(true)}>{type === "BACKFILL" ? "Make current month…" : "Make backfill…"}</Button>
         <Button variant="ghost" disabled={busy} onClick={() => setDeleting(true)}>Delete…</Button>
@@ -610,12 +636,12 @@ function Dialog({ eyebrow, title, onClose, busy, children }: { eyebrow: string; 
   );
 }
 
-// Switch an UPCOMING month between a current month (three weeks) and a
-// backfill (one catch-up window); the server replaces its weeks.
+// Switch an UPCOMING month between a current month and a backfill (both
+// three weeks); the server replaces its weeks with these.
 function ChangeTypeDialog({ period, onClose, onChanged }: { period: Period; onClose: () => void; onChanged: () => void }) {
   const toNormal = period.period_type === "BACKFILL";
   const month = period.observation_month.slice(0, 7);
-  const [weeks, setWeeks] = useState<DateRange[]>(() => (toNormal ? suggestNormalWeeks(month) : suggestBackfillWindow(month)));
+  const [weeks, setWeeks] = useState<DateRange[]>(() => (toNormal ? suggestNormalWeeks(month) : suggestBackfillWeeks(month)));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const problem = validateWeeks(toNormal ? "NORMAL" : "BACKFILL", month, weeks);
@@ -642,13 +668,13 @@ function ChangeTypeDialog({ period, onClose, onChanged }: { period: Period; onCl
         <p className="text-xs leading-relaxed text-prism-muted">
           {toNormal
             ? "A current month has three collection weeks with weekly targets. Only one current month can be open at a time."
-            : "A backfill has one catch-up window. Readers choose it per outlet alongside the current month."}
+            : "A backfill runs in three catch-up weeks with weekly targets, alongside the current month. At each outlet readers finish the backfill month first."}
           {" Its existing dates are replaced by these."}
         </p>
         <div className="grid gap-3">
           {weeks.map((w, i) => (
             <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-end gap-2">
-              <p className="pb-2 text-xs font-black text-prism-text">{toNormal ? `Week ${i + 1}` : "Window"}</p>
+              <p className="pb-2 text-xs font-black text-prism-text">{`Week ${i + 1}`}</p>
               <DateField label="Starts" value={w.startDate} onChange={(v) => setWeek(i, "startDate", v)} />
               <DateField label="Ends" value={w.endDate} onChange={(v) => setWeek(i, "endDate", v)} />
             </div>
@@ -711,6 +737,34 @@ function DeleteDialog({ period, onClose, onDeleted }: { period: Period; onClose:
   );
 }
 
+// Confirm closing a week before its dates are over: a tick and a reason.
+function EarlyCloseDialog({ title, warning, confirmLabel, busy, onCancel, onConfirm }: {
+  title: string; warning: string; confirmLabel: string; busy: boolean; onCancel: () => void; onConfirm: (reason: string) => void;
+}) {
+  const [ok, setOk] = useState(false);
+  const [reason, setReason] = useState("");
+  const missing = !ok || reason.trim().length < 5;
+  return (
+    <Dialog eyebrow="Close early" title={title} onClose={onCancel} busy={busy}>
+      <div className="space-y-4">
+        <p className="rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold text-amber-900">{warning}</p>
+        <label className="flex items-start gap-2 text-xs font-bold text-prism-text">
+          <input type="checkbox" checked={ok} onChange={(e) => setOk(e.target.checked)} className="mt-0.5 accent-prism-purple" />
+          {confirmLabel}
+        </label>
+        <label className="block">
+          <span className="text-[11px] font-bold uppercase tracking-wide text-prism-muted">Reason (kept with the week)</span>
+          <textarea value={reason} onChange={(e) => setReason(e.target.value)} rows={2} maxLength={500} placeholder="e.g. Every outlet for the week is done" className="mt-1 w-full rounded-2xl border border-prism-border px-3 py-2 text-sm" />
+        </label>
+        <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" disabled={busy} onClick={onCancel}>Cancel</Button>
+          <Button variant="danger" disabled={missing} busy={busy} onClick={() => onConfirm(reason.trim())}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </Dialog>
+  );
+}
+
 function CheckItem({ state, children }: { state: "ok" | "warn" | "fail"; children: ReactNode }) {
   const icon = { ok: ["✓", "bg-emerald-500"], warn: ["!", "bg-amber-500"], fail: ["×", "bg-rose-500"] }[state];
   return (
@@ -755,7 +809,7 @@ function OpenWizard({ period, onClose, onOpened }: { period: Period; onClose: ()
       {preview.error && <Notice tone="error">{preview.error}</Notice>}
       {data && (
         <div className="space-y-5">
-          <CheckGroup title={backfill ? "Catch-up window" : "Weeks"}>
+          <CheckGroup title={period.weekly === false ? "Catch-up window" : "Weeks"}>
             {data.weeks.map((w) => <CheckItem key={w.week_id} state="ok">{`${w.week_type === "CATCH_UP" ? "Catch-up" : `Week ${w.week_no}`}: ${formatDay(w.start_date)} – ${formatDay(w.end_date)}`}</CheckItem>)}
           </CheckGroup>
           {data.frame && (
@@ -806,11 +860,19 @@ function CloseWizard({ period, onClose, onClosed }: { period: Period; onClose: (
   const name = nameOf(period);
   const syncRisk = sync ? sync.stale + sync.never_synced : 0;
 
+  // Before the last week's end date the month only closes with an explicit
+  // "close early" and a reason (the server enforces the same).
+  const lastDay = period.collection_close_date;
+  const endsLater = !!lastDay && lastDay >= todayIso();
+  const [earlyOk, setEarlyOk] = useState(false);
+  const [earlyReason, setEarlyReason] = useState("");
+  const earlyMissing = endsLater && (!earlyOk || earlyReason.trim().length < 5);
   const close = async () => {
+    if (earlyMissing) return;
     setBusy(true);
     setError("");
     try {
-      await rebasingApi(`/periods/${period.period_id}/close`, { method: "POST", body: {} });
+      await rebasingApi(`/periods/${period.period_id}/close`, { method: "POST", body: endsLater ? { early: true, reason: earlyReason.trim() } : {} });
       onClosed();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "The month could not be closed.");
@@ -903,11 +965,21 @@ function CloseWizard({ period, onClose, onClosed }: { period: Period; onClose: (
             {period.period_type === "NORMAL" && <CheckItem state="ok">The next month can then be opened.</CheckItem>}
           </ul>
           {syncRisk > 0 && <Notice tone="warning">{`${syncRisk} reader(s) have not synced recently. Anything still on their phones for ${name} can no longer be sent once it is closed.`}</Notice>}
+          {endsLater && (
+            <div className="space-y-2 rounded-2xl border border-amber-300 bg-amber-50 p-3">
+              <p className="text-xs font-bold text-amber-900">{`Collection for ${name} runs until ${formatDay(lastDay)}. Closing now stops all collection before its dates are over.`}</p>
+              <label className="flex items-start gap-2 text-xs font-bold text-amber-900">
+                <input type="checkbox" checked={earlyOk} onChange={(e) => setEarlyOk(e.target.checked)} className="mt-0.5 accent-amber-600" />
+                Close this month early
+              </label>
+              <textarea value={earlyReason} onChange={(e) => setEarlyReason(e.target.value)} rows={2} maxLength={500} placeholder="Why close early? (kept with the month)" className="w-full rounded-xl border border-amber-300 bg-white px-3 py-2 text-xs" />
+            </div>
+          )}
           <p className="rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold text-rose-800">This cannot be reversed.</p>
           {error && <Notice tone="error">{error}</Notice>}
           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
             <Button variant="secondary" disabled={busy} onClick={() => setStep(1)}>Back</Button>
-            <Button variant="danger" busy={busy} onClick={() => void close()}>{`Close ${name}`}</Button>
+            <Button variant="danger" busy={busy} disabled={earlyMissing} title={earlyMissing ? "Tick “Close this month early” and give a reason" : ""} onClick={() => void close()}>{endsLater ? `Close ${name} early` : `Close ${name}`}</Button>
           </div>
         </div>
       )}
@@ -946,12 +1018,12 @@ function ClosedMonths({ periods }: { periods: Period[] }) {
 function SpecialPeriodForm({ existingMonths, onCancel, onCreated }: { existingMonths: Set<string>; onCancel: () => void; onCreated: () => void }) {
   const [month, setMonth] = useState(todayIso().slice(0, 7));
   const [type, setType] = useState<Period["period_type"]>("BACKFILL");
-  const [weeks, setWeeks] = useState<DateRange[]>(() => suggestBackfillWindow(todayIso().slice(0, 7)));
+  const [weeks, setWeeks] = useState<DateRange[]>(() => suggestBackfillWeeks(todayIso().slice(0, 7)));
   const [periodNumber, setPeriodNumber] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
-  const refill = (nextType: Period["period_type"], nextMonth: string) => setWeeks(nextType === "NORMAL" ? suggestNormalWeeks(nextMonth) : suggestBackfillWindow(nextMonth));
+  const refill = (nextType: Period["period_type"], nextMonth: string) => setWeeks(nextType === "NORMAL" ? suggestNormalWeeks(nextMonth) : suggestBackfillWeeks(nextMonth));
   const setWeek = (index: number, field: keyof DateRange, value: string) => setWeeks((current) => current.map((w, i) => (i === index ? { ...w, [field]: value } : w)));
   const problem = validateWeeks(type, month, weeks) || (existingMonths.has(month) ? `${monthLabel(month)} already exists.` : "");
 
@@ -969,7 +1041,7 @@ function SpecialPeriodForm({ existingMonths, onCancel, onCreated }: { existingMo
           month: m,
           periodType: type,
           ...(periodNumber.trim() ? { periodNumber: Number(periodNumber) } : {}),
-          weeks: weeks.map((w, i) => ({ ...(type === "NORMAL" ? { weekNo: i + 1 } : {}), startDate: w.startDate, endDate: w.endDate })),
+          weeks: weeks.map((w, i) => ({ weekNo: i + 1, startDate: w.startDate, endDate: w.endDate })),
         },
       });
       onCreated();
@@ -997,7 +1069,7 @@ function SpecialPeriodForm({ existingMonths, onCancel, onCreated }: { existingMo
             <div className="mt-1.5 grid grid-cols-2 gap-1 rounded-xl bg-prism-bg p-1">
               {(["BACKFILL", "NORMAL"] as const).map((t) => (
                 <button key={t} type="button" onClick={() => { setType(t); refill(t, month); }} className={clsx("rounded-lg px-3 py-2 text-xs font-bold transition", type === t ? "bg-white text-prism-text shadow-sm" : "text-prism-muted hover:text-prism-text")}>
-                  {t === "NORMAL" ? "Current · 3 weeks" : "Backfill · catch-up"}
+                  {t === "NORMAL" ? "Current · 3 weeks" : "Backfill · 3 weeks"}
                 </button>
               ))}
             </div>
@@ -1010,7 +1082,7 @@ function SpecialPeriodForm({ existingMonths, onCancel, onCreated }: { existingMo
         <div className={clsx("grid gap-3", weeks.length > 1 ? "md:grid-cols-3" : "md:max-w-md")}>
           {weeks.map((w, i) => (
             <div key={i} className="rounded-2xl border border-prism-border/70 p-4">
-              <p className="text-sm font-black text-prism-text">{type === "NORMAL" ? `Week ${i + 1}` : "Catch-up window"}</p>
+              <p className="text-sm font-black text-prism-text">{weekName(weeks, i)}</p>
               <div className="mt-3 space-y-2">
                 <DateField label="Starts" value={w.startDate} onChange={(v) => setWeek(i, "startDate", v)} />
                 <DateField label="Ends" value={w.endDate} onChange={(v) => setWeek(i, "endDate", v)} />
@@ -1034,20 +1106,24 @@ function SpecialPeriodForm({ existingMonths, onCancel, onCreated }: { existingMo
 function MarketPlans({ period }: { period: Period }) {
   const plans = useRebasingQuery<{ plans: MarketPlan[] }>(`/periods/${period.period_id}/market-plans`);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<10 | 20>(20);
   const rows = useMemo(() => {
     const term = search.trim().toLowerCase();
     const all = plans.data?.plans || [];
     return term ? all.filter((p) => `${p.market_name} ${p.region_name} ${p.district_name} ${p.market_code ?? ""}`.toLowerCase().includes(term)) : all;
   }, [plans.data, search]);
-  const backfill = period.period_type === "BACKFILL";
+  // Weekly targets for every month except an older single-window backfill.
+  const backfill = period.weekly === false;
+  const currentPage = Math.min(page, Math.max(1, Math.ceil(rows.length / pageSize)));
   return (
     <div className="overflow-hidden rounded-2xl border border-prism-border/70">
       <div className="flex flex-col gap-2 border-b border-prism-border/60 bg-slate-50/60 p-3 sm:flex-row sm:items-center sm:justify-between">
         <p className="text-xs font-bold text-prism-text">{plans.loading ? "Loading market targets…" : `${number.format(rows.length)} markets · frozen when the month opened`}</p>
-        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search market, district or region" className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs sm:w-64" />
+        <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search market, district or region" className="rounded-xl border border-prism-border bg-white px-3 py-2 text-xs sm:w-64" />
       </div>
       {plans.error && <p className="p-3 text-xs text-red-700">{plans.error}</p>}
-      <div className="max-h-96 overflow-auto">
+      <div className="overflow-x-auto">
         <table className="min-w-full text-left text-xs">
           <thead className="sticky top-0 bg-white text-[10px] uppercase tracking-[0.12em] text-prism-muted shadow-[0_1px_0_#E5E7EB]">
             <tr>
@@ -1057,7 +1133,7 @@ function MarketPlans({ period }: { period: Period }) {
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, 300).map((p) => (
+            {rows.slice((currentPage - 1) * pageSize, currentPage * pageSize).map((p) => (
               <tr key={p.plan_id} className="border-t border-prism-border/50">
                 <td className="px-4 py-2.5"><p className="font-bold text-prism-text">{p.market_name}</p><p className="text-[10px] text-prism-muted">{p.district_name} · {p.region_name}</p></td>
                 <td className="px-4 py-2.5 text-right font-black text-prism-text">{number.format(p.total_outlets)}</td>
@@ -1066,8 +1142,10 @@ function MarketPlans({ period }: { period: Period }) {
             ))}
           </tbody>
         </table>
-        {rows.length > 300 && <p className="p-3 text-center text-[11px] text-prism-muted">Showing 300 of {number.format(rows.length)} - search to narrow down.</p>}
       </div>
+      {rows.length > pageSize && (
+        <TablePagination page={currentPage} pageSize={pageSize} total={rows.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
+      )}
     </div>
   );
 }

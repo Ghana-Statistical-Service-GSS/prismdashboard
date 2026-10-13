@@ -2,6 +2,9 @@
 
 import { FormEvent, ReactNode, useEffect, useState } from "react";
 import clsx from "clsx";
+import { TablePagination } from "@/components/common/TablePagination";
+import { TableSearch } from "@/components/common/TableSearch";
+import { useTableControls } from "@/components/common/useTableControls";
 import { formatDateTime, formatDay, number, rebasingApi } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
 
@@ -21,7 +24,9 @@ type MarketRow = {
 type Unfinished = {
   weeks_ended: { week_id: string; week_no: number; end_date: string }[];
   later_weeks: { week_id: string; week_no: number; start_date: string; end_date: string }[];
-  last_week_ended: boolean; can_carry: boolean; can_mark_not_collected: boolean; markets: MarketRow[];
+  last_week_ended: boolean; all_weeks_closed?: boolean; last_week_end_date?: string | null; can_carry: boolean; can_mark_not_collected: boolean; markets: MarketRow[];
+  // Over every market in scope (the list itself is one page).
+  total_markets?: number; total_unresolved_products?: number;
 };
 type Exception = { exception_id: string; market_name: string; region_name: string; outlet_name: string | null; product_name: string | null; scope_type: string; reason_category: string; note: string | null; products_marked: number; created_by_name: string; created_at: string };
 
@@ -38,7 +43,13 @@ type NotCollectedTarget = { scope: "ALL" } | { scope: "MARKET"; market: MarketRo
 
 export function UnfinishedWork({ periodId }: { periodId: string }) {
   const [version, setVersion] = useState(0);
-  const data = useRebasingQuery<Unfinished>(`/periods/${periodId}/unfinished`, version);
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<10 | 20>(10);
+  // One page of markets at a time, searched on the server.
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) });
+  if (search.trim()) params.set("search", search.trim());
+  const data = useRebasingQuery<Unfinished>(`/periods/${periodId}/unfinished?${params}`, version);
   const exceptions = useRebasingQuery<{ exceptions: Exception[] }>(`/periods/${periodId}/exceptions`, version);
   const [carry, setCarry] = useState<CarryTarget | null>(null);
   const [notCollected, setNotCollected] = useState<NotCollectedTarget | null>(null);
@@ -47,7 +58,10 @@ export function UnfinishedWork({ periodId }: { periodId: string }) {
   const d = data.data;
   const done = (message: string) => { setCarry(null); setNotCollected(null); setNotice(message); setVersion((v) => v + 1); };
   const toggle = (id: string) => setOpen((current) => { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next; });
-  const totalUnresolved = (d?.markets || []).reduce((n, m) => n + m.unresolved_products, 0);
+  const totalUnresolved = d?.total_unresolved_products ?? (d?.markets || []).reduce((n, m) => n + m.unresolved_products, 0);
+  const totalMarkets = d?.total_markets ?? d?.markets.length ?? 0;
+  const recorded = useTableControls(exceptions.data?.exceptions || [],
+    (e) => `${e.market_name} ${e.region_name} ${e.outlet_name ?? ""} ${e.product_name ?? ""} ${reasonLabel(e.reason_category)} ${e.created_by_name}`, 10);
 
   return (
     <div className="mt-6 space-y-5">
@@ -67,18 +81,29 @@ export function UnfinishedWork({ periodId }: { periodId: string }) {
             </p>
           </div>
 
-          {d.last_week_ended && d.can_mark_not_collected && totalUnresolved > 0 && (
+          {d.can_mark_not_collected && totalUnresolved > 0 && (
             <div className="flex flex-col gap-3 rounded-3xl border border-rose-200 bg-rose-50/70 p-5 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <p className="text-sm font-black text-rose-900">{`The last week has ended - ${number.format(totalUnresolved)} products are still not collected`}</p>
+                <p className="text-sm font-black text-rose-900">{d.last_week_ended
+                  ? `The last week has ended - ${number.format(totalUnresolved)} products are still not collected`
+                  : `Every week was closed early - ${number.format(totalUnresolved)} products are still not collected`}</p>
                 <p className="text-xs text-rose-900/80">Record them as not collected, with a reason, so the month can close. It is audited and shown in the reports.</p>
               </div>
               <button type="button" onClick={() => setNotCollected({ scope: "ALL" })} className="shrink-0 rounded-full bg-rose-600 px-4 py-2.5 text-xs font-bold text-white hover:bg-rose-700">Record all as not collected…</button>
             </div>
           )}
 
+          {(totalMarkets > 0 || search.trim()) && (
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search market, region, outlet or reader" className="sm:w-80" />
+              <p className="text-xs font-semibold text-prism-muted">{`${number.format(totalMarkets)} market${totalMarkets === 1 ? "" : "s"} with unfinished work${search.trim() ? " match" : ""}`}</p>
+            </div>
+          )}
+
           {d.markets.length === 0 && d.weeks_ended.length > 0 && (
-            <p className="rounded-3xl border border-dashed border-prism-border bg-white/70 p-10 text-center text-sm text-prism-muted">No unfinished work. Every started outlet is done or carried forward, and every target is met.</p>
+            <p className="rounded-3xl border border-dashed border-prism-border bg-white/70 p-10 text-center text-sm text-prism-muted">{search.trim()
+              ? `No market, outlet or reader matches “${search.trim()}”.`
+              : "No unfinished work. Every started outlet is done or carried forward, and every target is met."}</p>
           )}
 
           {d.markets.map((m) => (
@@ -132,24 +157,42 @@ export function UnfinishedWork({ periodId }: { periodId: string }) {
             </section>
           ))}
 
+          {totalMarkets > pageSize && (
+            <div className="overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
+              <TablePagination page={page} pageSize={pageSize} total={totalMarkets} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
+            </div>
+          )}
+
           {(exceptions.data?.exceptions.length ?? 0) > 0 && (
             <section className="rounded-3xl border border-prism-border/70 bg-white p-4 shadow-sm sm:p-5">
-              <h3 className="text-sm font-black text-prism-text">Recorded as not collected</h3>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <h3 className="text-sm font-black text-prism-text">Recorded as not collected</h3>
+                <TableSearch value={recorded.query} onChange={recorded.setQuery} placeholder="Search market, outlet, product or reason" delayMs={150} className="sm:w-72" />
+              </div>
               <ul className="mt-3 divide-y divide-prism-border/50 text-xs">
-                {exceptions.data!.exceptions.map((e) => (
+                {recorded.pageRows.map((e) => (
                   <li key={e.exception_id} className="py-2">
                     <p className="font-bold text-prism-text">{`${e.market_name}${e.outlet_name ? ` · ${e.outlet_name}` : ""}${e.product_name ? ` · ${e.product_name}` : ""} - ${number.format(e.products_marked)} products`}</p>
                     <p className="text-prism-muted">{`${reasonLabel(e.reason_category)}${e.note ? `: ${e.note}` : ""} · ${e.created_by_name} · ${formatDateTime(e.created_at)}`}</p>
                   </li>
                 ))}
+                {recorded.total === 0 && <li className="py-4 text-center text-prism-muted">Nothing matches this search.</li>}
               </ul>
+              {recorded.total > recorded.pageSize && (
+                <div className="-mx-4 -mb-4 mt-3 sm:-mx-5 sm:-mb-5">
+                  <TablePagination page={recorded.page} pageSize={recorded.pageSize} total={recorded.total} onPageChange={recorded.setPage} onPageSizeChange={recorded.setPageSize} />
+                </div>
+              )}
             </section>
           )}
         </>
       )}
 
       {carry && d && <CarryDialog periodId={periodId} target={carry} laterWeeks={d.later_weeks} onClose={() => setCarry(null)} onDone={done} />}
-      {notCollected && <NotCollectedDialog periodId={periodId} target={notCollected} onClose={() => setNotCollected(null)} onDone={done} />}
+      {notCollected && d && (
+        <NotCollectedDialog periodId={periodId} target={notCollected} earlyUntil={d.last_week_ended ? null : d.last_week_end_date ?? null}
+          onClose={() => setNotCollected(null)} onDone={done} />
+      )}
     </div>
   );
 }
@@ -242,12 +285,16 @@ function CarryDialog({ periodId, target, laterWeeks, onClose, onDone }: {
 }
 
 // HQ / RS: record unresolved work as not collected, with a reason.
-function NotCollectedDialog({ periodId, target, onClose, onDone }: { periodId: string; target: NotCollectedTarget; onClose: () => void; onDone: (message: string) => void }) {
+function NotCollectedDialog({ periodId, target, earlyUntil, onClose, onDone }: {
+  periodId: string; target: NotCollectedTarget; earlyUntil: string | null; onClose: () => void; onDone: (message: string) => void;
+}) {
+  const [earlyOk, setEarlyOk] = useState(false);
   const [reason, setReason] = useState<string>("READER_ABSENT");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const problem = reason === "OTHER" && note.trim().length < 5 ? "Describe the reason (at least 5 characters)." : "";
+  const problem = earlyUntil && !earlyOk ? "Tick “Record early” to record before the last week ends."
+    : reason === "OTHER" && note.trim().length < 5 ? "Describe the reason (at least 5 characters)." : "";
   const title = target.scope === "ALL" ? "Everything still open" : target.scope === "MARKET" ? target.market.market_name : target.outlet.outlet_name;
   const scopeText = target.scope === "ALL" ? "every product still open in your markets"
     : target.scope === "MARKET" ? `the ${number.format(target.market.unresolved_products)} products still open in ${target.market.market_name}`
@@ -267,6 +314,7 @@ function NotCollectedDialog({ periodId, target, onClose, onDone }: { periodId: s
           outletId: target.scope === "OUTLET" ? target.outlet.outlet_id : null,
           reasonCategory: reason,
           note: note.trim() || null,
+          ...(earlyUntil ? { early: true } : {}),
         },
       });
       onDone(`${number.format(result.products_marked)} products recorded as not collected${result.markets > 1 ? ` in ${result.markets} markets` : ""}.`);
@@ -280,6 +328,12 @@ function NotCollectedDialog({ periodId, target, onClose, onDone }: { periodId: s
     <Sheet title={title} eyebrow="Record as not collected" busy={busy} onClose={onClose}>
       <form onSubmit={submit} className="space-y-4">
         <p className="text-xs text-prism-text">{`This records ${scopeText} as not collected this month. Carry-forwards that can no longer be done are settled. It is audited and appears in the reports.`}</p>
+        {earlyUntil && (
+          <label className="flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50 p-3 text-xs font-bold text-amber-900">
+            <input type="checkbox" checked={earlyOk} onChange={(e) => setEarlyOk(e.target.checked)} className="mt-0.5 accent-amber-600" />
+            {`Record early - the last week runs until ${formatDay(earlyUntil)} (the weeks were closed early).`}
+          </label>
+        )}
         <fieldset className="grid grid-cols-2 gap-2">
           <legend className="mb-1 text-[11px] font-bold text-prism-muted">Reason</legend>
           {REASONS.map((r) => (
@@ -296,8 +350,9 @@ function NotCollectedDialog({ periodId, target, onClose, onDone }: { periodId: s
         {error && <p role="alert" className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
         <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <button type="button" onClick={onClose} disabled={busy} className="rounded-full border border-prism-border px-4 py-2.5 text-sm font-semibold">Cancel</button>
-          <button type="submit" disabled={!!problem || busy} title={problem} className="rounded-full bg-rose-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40">{busy ? "Saving…" : "Record as not collected"}</button>
+          <button type="submit" disabled={!!problem || busy} title={problem} className="rounded-full bg-rose-600 px-5 py-2.5 text-sm font-bold text-white disabled:opacity-40">{busy ? "Recording…" : "Record as not collected"}</button>
         </div>
+        {busy && target.scope !== "OUTLET" && <p className="text-center text-[11px] text-prism-muted">Recording a whole market or region can take a minute. Please keep this page open.</p>}
       </form>
     </Sheet>
   );

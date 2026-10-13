@@ -4,6 +4,7 @@ import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import clsx from "clsx";
 import type { DashboardUser } from "@/lib/auth";
+import { TablePagination } from "@/components/common/TablePagination";
 import { number, rebasingApi } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
 
@@ -30,6 +31,8 @@ export function AssignmentsPanel({ periodId, periodName }: { periodId: string; p
   const [version, setVersion] = useState(0);
   const board = useRebasingQuery<Board>(`/market-assignments/board?periodId=${periodId}`, version);
   const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<10 | 20>(20);
   const [action, setAction] = useState<Action | null>(null);
   const [notice, setNotice] = useState("");
   const data = board.data;
@@ -41,6 +44,10 @@ export function AssignmentsPanel({ periodId, periodName }: { periodId: string; p
     return all.filter((m) => `${m.market_name} ${m.district_name} ${m.region_name}`.toLowerCase().includes(term)
       || m.readers.some((r) => r.reader_name.toLowerCase().includes(term)));
   }, [data, search]);
+
+  const totalPages = Math.max(1, Math.ceil(markets.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageMarkets = markets.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const totals = useMemo(() => {
     const readers = (data?.markets || []).flatMap((m) => m.readers);
@@ -99,10 +106,10 @@ export function AssignmentsPanel({ periodId, periodName }: { periodId: string; p
         <div className="overflow-hidden rounded-3xl border border-prism-border/70 bg-white shadow-sm">
           <div className="flex flex-col gap-2 border-b border-prism-border/60 p-4 sm:flex-row sm:items-center sm:justify-between">
             <p className="text-xs font-bold text-prism-text">{number.format(markets.length)} markets</p>
-            <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search market, district, region or reader" className="rounded-xl border border-prism-border px-3 py-2 text-xs sm:w-72" />
+            <input type="search" value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} placeholder="Search market, district, region or reader" className="rounded-xl border border-prism-border px-3 py-2 text-xs sm:w-72" />
           </div>
           <ul className="divide-y divide-prism-border/60">
-            {markets.map((m) => (
+            {pageMarkets.map((m) => (
               <li key={m.market_id} className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between sm:px-5">
                 <div className="min-w-0 sm:w-64 sm:shrink-0">
                   <p className="truncate text-sm font-black text-prism-text">{m.market_name}</p>
@@ -139,6 +146,9 @@ export function AssignmentsPanel({ periodId, periodName }: { periodId: string; p
             ))}
             {!markets.length && <li className="p-8 text-center text-xs text-prism-muted">No markets match.</li>}
           </ul>
+          {markets.length > pageSize && (
+            <TablePagination page={currentPage} pageSize={pageSize} total={markets.length} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
+          )}
         </div>
       )}
 

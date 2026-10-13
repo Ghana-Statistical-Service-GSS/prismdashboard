@@ -21,8 +21,9 @@ async function forward(request: Request, context: { params: Promise<{ path?: str
       method: request.method,
       headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body || undefined,
-      // Opening a period freezes the whole frame (~150k rows) in one transaction.
-      timeoutMs: path.at(-1) === "open" ? 180_000 : 30_000,
+      // Opening a period freezes the whole frame (~150k rows) in one transaction;
+      // recording a whole scope as not collected can mark as many.
+      timeoutMs: path.at(-1) === "open" || path.at(-1) === "not-collected" ? 180_000 : 30_000,
     });
     const data = await response.json().catch(() => null);
     return NextResponse.json(data ?? { error: { message: "Unexpected response from the Market Reading service" } }, { status: response.status });

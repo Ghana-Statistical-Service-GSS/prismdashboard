@@ -2,12 +2,14 @@
 
 import { useState } from "react";
 import type { DashboardUser } from "@/lib/auth";
+import { TablePagination } from "@/components/common/TablePagination";
+import { TableSearch } from "@/components/common/TableSearch";
 import { Decision, DecisionDialog } from "./DecisionDialog";
 import { Carryover, RebasingApiError, formatDateTime, rebasingApi } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
 
 type Filter = "" | Carryover["status"];
-type ListResponse = { carryovers: Carryover[]; queue: "SUPERVISOR" | "RS" | null };
+type ListResponse = { carryovers: Carryover[]; queue: "SUPERVISOR" | "RS" | null; total: number };
 
 const STATUS_STYLE: Record<Carryover["status"], string> = {
   PENDING: "bg-amber-100 text-amber-800",
@@ -35,13 +37,19 @@ function scopeLabel(row: Carryover) {
 export function CarryForwardPanel({ periodId, role, onChanged }: { periodId: string; role: DashboardUser["role"]; onChanged: () => void }) {
   const reviewer = role === "SUPERVISOR" || role === "REGIONAL_STATISTICIAN";
   const [filter, setFilter] = useState<Filter>("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState<10 | 20>(20);
   const [notice, setNotice] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   const [pending, setPending] = useState<{ row: Carryover; decision: Decision; stage: "supervisor-review" | "rs-review" } | null>(null);
-  const params = new URLSearchParams({ periodId });
+  // One page at a time from the server, with search there too.
+  const params = new URLSearchParams({ periodId, page: String(page), pageSize: String(pageSize) });
   if (filter) params.set("status", filter);
+  if (search.trim()) params.set("search", search.trim());
   const list = useRebasingQuery<ListResponse>(`/carryovers?${params}`, reloadKey);
   const rows = list.data?.carryovers || [];
+  const total = list.data?.total ?? rows.length;
   const { loading, error } = list;
 
   const decide = async (text: string) => {
@@ -87,11 +95,12 @@ export function CarryForwardPanel({ periodId, role, onChanged }: { periodId: str
         </p>
         <div className="-mx-1 mt-4 flex gap-2 overflow-x-auto px-1 pb-1">
           {filters.map((item) => (
-            <button key={item.label} type="button" onClick={() => setFilter(item.value)} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold transition ${filter === item.value ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
+            <button key={item.label} type="button" onClick={() => { setFilter(item.value); setPage(1); }} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-bold transition ${filter === item.value ? "bg-prism-purple text-white" : "bg-prism-bg text-prism-muted hover:text-prism-text"}`}>
               {item.label}
             </button>
           ))}
         </div>
+        <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search outlet, market, product or reader" className="mt-3 sm:w-80" />
       </div>
 
       {notice && <p role="status" className="mx-5 mt-4 rounded-2xl bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">{notice}</p>}
@@ -135,9 +144,13 @@ export function CarryForwardPanel({ periodId, role, onChanged }: { periodId: str
           );
         })}
         {!loading && rows.length === 0 && !error && (
-          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{filter === "" && reviewer ? "No carry-forward requests are waiting for you." : "No carry-forward requests in this view."}</p>
+          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No carry-forward requests match “${search.trim()}”.` : filter === "" && reviewer ? "No carry-forward requests are waiting for you." : "No carry-forward requests in this view."}</p>
         )}
       </div>
+
+      {total > pageSize && (
+        <TablePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
+      )}
 
       {pending && (
         <DecisionDialog

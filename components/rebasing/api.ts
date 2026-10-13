@@ -8,6 +8,9 @@ export type Period = {
   month: number;
   period_number: number | null;
   period_type: "NORMAL" | "BACKFILL";
+  /** Weeks 1-3 with weekly targets (every month, except a backfill created
+   * earlier with a single catch-up window). */
+  weekly?: boolean;
   observation_month: string;
   collection_open_date: string | null;
   collection_close_date: string | null;
@@ -158,6 +161,7 @@ export type ReviewQuote = {
   synced_late?: boolean;
   time_corrected?: boolean;
   auto_approved?: boolean;
+  period_status?: "UPCOMING" | "OPEN" | "CLOSED";
 };
 
 export type QuoteReview = {

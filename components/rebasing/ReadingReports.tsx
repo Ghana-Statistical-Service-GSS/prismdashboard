@@ -5,6 +5,9 @@ import clsx from "clsx";
 import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { DashboardUser } from "@/lib/auth";
 import { loadDashboardUser } from "@/lib/dashboard-user-client";
+import { TablePagination } from "@/components/common/TablePagination";
+import { TableSearch } from "@/components/common/TableSearch";
+import { useTableControls } from "@/components/common/useTableControls";
 import { MetricRow, Period, ReaderMetricRow, formatDay, number, percent, periodLabel } from "./api";
 import { useRebasingQuery } from "./useRebasingQuery";
 
@@ -14,7 +17,7 @@ import { useRebasingQuery } from "./useRebasingQuery";
 type Summary = {
   turnaround: { stage: "SUPERVISOR" | "RS" | "HQ"; decisions: number; rejected: number; avg_hours: number | null; median_hours: number | null }[];
   waiting: { stage: "PENDING_SUPERVISOR" | "PENDING_RS" | "PENDING_HQ"; under_1_day: number; one_to_3_days: number; over_3_days: number }[];
-  completeness: { region_id: string; region_name: string; expected: number; priced: number; not_available: number; carried: number; open: number }[];
+  completeness: { region_id: string; region_name: string; expected: number; priced: number; not_available: number; carried: number; not_collected?: number; open: number }[];
   daily: { day: string; submitted: number; final_approved: number; rejected: number }[];
   late: { prices_synced_late: number; prices_time_corrected: number; auto_approved: number; auto_approved_flagged: number };
   auto_approved_flagged: { quote_id: string; market_name: string; region_name: string; outlet_name: string; product_name: string; price: string; previous_price: string | null; price_change_pct: string | null; weight_change_pct: string | null; reason_for_change: string | null }[];
@@ -24,7 +27,7 @@ type Summary = {
 const REASON_LABEL: Record<string, string> = { READER_ABSENT: "Reader absent", OUTLET_CLOSED: "Outlet closed", ACCESS_INSECURITY: "Access or insecurity", OTHER: "Other" };
 type GpsRow = { check_id: string; result: string; distance_m: number | null; region_name: string; market_name: string; outlet_name: string; reader_name: string; week_no: number | null; attempts: number };
 
-const COLORS = { priced: "#14b8a6", not_available: "#94a3b8", carried: "#7c3aed", open: "#f59e0b", submitted: "#7c3aed", approved: "#14b8a6", rejected: "#f43f5e" };
+const COLORS = { priced: "#14b8a6", not_available: "#94a3b8", carried: "#7c3aed", not_collected: "#f43f5e", open: "#f59e0b", submitted: "#7c3aed", approved: "#14b8a6", rejected: "#f43f5e" };
 const STAGES = [
   { key: "SUPERVISOR", pending: "PENDING_SUPERVISOR", label: "Supervisor" },
   { key: "RS", pending: "PENDING_RS", label: "Regional Statistician" },
@@ -117,9 +120,9 @@ export function ReadingReports() {
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
           <Panel
             title="Product completeness by region"
-            hint="Every expected product ends priced or not available; carried and open products are still to do."
-            action={<CsvButton onClick={() => downloadCsv(file("completeness"), ["Region", "Expected", "Priced", "Not available", "Carried forward", "Open"],
-              summary.data!.completeness.map((r) => [r.region_name, r.expected, r.priced, r.not_available, r.carried, r.open]))} />}
+            hint="Every expected product ends priced, not available or - by HQ/RS decision - not collected; carried and open products are still to do."
+            action={<CsvButton onClick={() => downloadCsv(file("completeness"), ["Region", "Expected", "Priced", "Not available", "Carried forward", "Not collected", "Open"],
+              summary.data!.completeness.map((r) => [r.region_name, r.expected, r.priced, r.not_available, r.carried, r.not_collected ?? 0, r.open]))} />}
           >
             <div className="h-72">
               <ResponsiveContainer width="100%" height="100%">
@@ -132,6 +135,7 @@ export function ReadingReports() {
                   <Bar dataKey="priced" name="Priced" stackId="a" fill={COLORS.priced} />
                   <Bar dataKey="not_available" name="Not available" stackId="a" fill={COLORS.not_available} />
                   <Bar dataKey="carried" name="Carried forward" stackId="a" fill={COLORS.carried} />
+                  <Bar dataKey="not_collected" name="Not collected" stackId="a" fill={COLORS.not_collected} />
                   <Bar dataKey="open" name="Open" stackId="a" fill={COLORS.open} radius={[0, 6, 6, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -204,6 +208,8 @@ export function ReadingReports() {
             summary.data!.readers.map((r) => [r.reader_name, r.market_name, r.region_name, ...r.weeks.map((w) => `${w.completed} / ${w.share ?? "-"}`), r.weeks_missed, r.synced_late, r.time_corrected]))} />}
         >
           <Table
+            searchPlaceholder="Search reader, market or region"
+            searchTexts={[...summary.data.readers].sort((a, b) => b.weeks_missed - a.weeks_missed || b.synced_late - a.synced_late).map((r) => `${r.reader_name} ${r.market_name} ${r.region_name}`)}
             header={["Reader", "Market", ...summary.data.readers[0].weeks.map((w) => `Week ${w.week_no}`), "Missed", "Late"]}
             rows={[...summary.data.readers].sort((a, b) => b.weeks_missed - a.weeks_missed || b.synced_late - a.synced_late).map((r) => [
               <span key="n" className="font-bold text-prism-text">{r.reader_name}</span>,
@@ -228,6 +234,8 @@ export function ReadingReports() {
             summary.data!.auto_approved_flagged.map((q) => [q.market_name, q.region_name, q.outlet_name, q.product_name, q.price, q.previous_price, q.price_change_pct, q.weight_change_pct, q.reason_for_change]))} />}
         >
           <Table
+            searchPlaceholder="Search product, outlet, market or region"
+            searchTexts={summary.data.auto_approved_flagged.map((q) => `${q.product_name} ${q.outlet_name} ${q.market_name} ${q.region_name}`)}
             header={["Product", "Outlet", "Price", "Previous", "Change", "Reason"]}
             rows={summary.data.auto_approved_flagged.map((q) => [
               <span key="p" className="font-bold text-prism-text">{q.product_name}</span>, `${q.outlet_name} · ${q.market_name}`,
@@ -261,6 +269,8 @@ export function ReadingReports() {
             readers.data!.rows.map((r) => [r.reader_name, r.market_name, r.region_name, r.outlets_completed, r.quotes_submitted, r.final_approved, r.rejected, r.not_available, r.gps_outlets_far]))} />}
         >
           <Table
+            searchPlaceholder="Search reader, market or region"
+            searchTexts={readers.data.rows.map((r) => `${r.reader_name} ${r.market_name} ${r.region_name}`)}
             header={["Reader", "Market", "Outlets", "Prices", "Approved", "Rejected", "Not avail.", "GPS far"]}
             rows={readers.data.rows.map((r) => [
               <span key="n" className="font-bold text-prism-text">{r.reader_name}</span>, r.market_name, r.outlets_completed, r.quotes_submitted, r.final_approved,
@@ -279,14 +289,15 @@ export function ReadingReports() {
             gps.data!.rows.map((r) => [r.outlet_name, r.market_name, r.region_name, r.reader_name, r.week_no, r.result, r.distance_m === null ? null : Math.round(r.distance_m), r.attempts]))} />}
         >
           <Table
+            searchPlaceholder="Search outlet, market, region or reader"
+            searchTexts={gps.data.rows.map((r) => `${r.outlet_name} ${r.market_name} ${r.region_name} ${r.reader_name}`)}
             header={["Outlet", "Market", "Reader", "Result", "Distance", "Attempts"]}
-            rows={gps.data.rows.slice(0, 50).map((r) => [
+            rows={gps.data.rows.map((r) => [
               <span key="o" className="font-bold text-prism-text">{r.outlet_name}</span>, r.market_name, r.reader_name,
               <span key="r" className={clsx("rounded-full px-2 py-0.5 text-[10px] font-black", r.result === "FAR" ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-prism-muted")}>{r.result === "FAR" ? "Far" : "No reference"}</span>,
               r.distance_m === null ? "—" : r.distance_m >= 1000 ? `${(r.distance_m / 1000).toFixed(1)} km` : `${Math.round(r.distance_m)} m`, r.attempts,
             ])}
           />
-          {gps.data.rows.length > 50 && <p className="mt-2 text-xs text-prism-muted">{`Showing 50 of ${gps.data.rows.length}. Download the CSV for all.`}</p>}
         </Panel>
       )}
     </>
@@ -328,8 +339,18 @@ function CsvButton({ onClick }: { onClick: () => void }) {
   );
 }
 
-function Table({ header, rows }: { header: string[]; rows: ReactNode[][] }) {
+// Paged (20 rows) with an optional search box: searchTexts[i] is what row i
+// is searched by.
+function Table({ header, rows, searchTexts, searchPlaceholder }: {
+  header: string[]; rows: ReactNode[][]; searchTexts?: string[]; searchPlaceholder?: string;
+}) {
+  const indexed = useMemo(() => rows.map((cells, i) => ({ cells, text: searchTexts?.[i] ?? "" })), [rows, searchTexts]);
+  const table = useTableControls(indexed, (row) => row.text);
   return (
+    <>
+    {searchTexts && rows.length > 10 && (
+      <TableSearch value={table.query} onChange={table.setQuery} delayMs={150} placeholder={searchPlaceholder ?? "Search"} className="mb-3 sm:w-72" />
+    )}
     <div className="-mx-4 overflow-x-auto sm:mx-0">
       <table className="w-full min-w-[640px] text-left text-xs">
         <thead>
@@ -338,14 +359,23 @@ function Table({ header, rows }: { header: string[]; rows: ReactNode[][] }) {
           </tr>
         </thead>
         <tbody className="divide-y divide-prism-border/40">
-          {rows.map((row, r) => (
+          {table.pageRows.map((row, r) => (
             <tr key={r} className="hover:bg-prism-bg/50">
-              {row.map((cell, i) => <td key={i} className={clsx("px-3 py-2 text-prism-text", i > 1 && "text-right tabular-nums")}>{cell}</td>)}
+              {row.cells.map((cell, i) => <td key={i} className={clsx("px-3 py-2 text-prism-text", i > 1 && "text-right tabular-nums")}>{cell}</td>)}
             </tr>
           ))}
+          {table.total === 0 && rows.length > 0 && (
+            <tr><td colSpan={header.length} className="px-3 py-6 text-center text-prism-muted">{`Nothing matches “${table.query}”.`}</td></tr>
+          )}
         </tbody>
       </table>
     </div>
+    {table.total > table.pageSize && (
+      <div className="-mx-4 -mb-4 mt-3 sm:-mx-5 sm:-mb-5">
+        <TablePagination page={table.page} pageSize={table.pageSize} total={table.total} onPageChange={table.setPage} onPageSizeChange={table.setPageSize} />
+      </div>
+    )}
+    </>
   );
 }
 
