@@ -45,6 +45,7 @@ const navByModule: Record<DashboardModule, NavSection[]> = {
         { label: "Dashboard", href: "/dashboard/market-reading" },
         { label: "Workload", href: "/market-reading/workload" },
         { label: "Reports", href: "/market-reading/reports" },
+        { label: "Device Bindings", href: "/market-reading/devices", hiddenForScopedRole: true },
       ],
     },
     {

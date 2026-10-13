@@ -12,6 +12,7 @@ const SCOPED_ROLE_RESTRICTED_PATHS = [
 const HQ_ONLY_PATHS = [
   "/collection-calendar",
   "/assignments",
+  "/market-reading/devices",
   "/regions",
   "/districts",
   "/markets",
