@@ -4,7 +4,16 @@
 FROM node:22-alpine AS deps
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+# The build host's link to registry.npmjs.org drops out; retry stalled fetches
+# instead of failing the deploy, and keep the npm cache between builds so a
+# rerun only fetches what it didn't get last time.
+ENV NPM_CONFIG_FETCH_RETRIES=6 \
+    NPM_CONFIG_FETCH_RETRY_MINTIMEOUT=20000 \
+    NPM_CONFIG_FETCH_RETRY_MAXTIMEOUT=120000 \
+    NPM_CONFIG_FETCH_TIMEOUT=300000 \
+    NPM_CONFIG_MAXSOCKETS=8
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --no-fund
 
 # ---- builder: compile the Next.js standalone server ----
 FROM node:22-alpine AS builder
