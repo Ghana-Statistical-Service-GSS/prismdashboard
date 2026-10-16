@@ -48,6 +48,31 @@ const STAGE_BY_ROLE: Record<DashboardUser["role"], { path: "supervisor" | "rs" |
 const stageStatus = (role: DashboardUser["role"]): ReviewStatus =>
   role === "SUPERVISOR" ? "PENDING_SUPERVISOR" : role === "REGIONAL_STATISTICIAN" ? "PENDING_RS" : "PENDING_HQ";
 
+// Filter options. "Waiting for": where the price is now (nobody at that stage
+// has acted yet). "Decided by": approved / rejected at any point in its history.
+const FILTER_GROUPS: { label: string; options: [string, string][] }[] = [
+  {
+    label: "Waiting for",
+    options: [
+      ["status:PENDING_SUPERVISOR", "Waiting for Supervisor"],
+      ["status:PENDING_RS", "Waiting for RS"],
+      ["status:PENDING_HQ", "Waiting for HQ"],
+    ],
+  },
+  {
+    label: "Decided by",
+    options: [
+      ["SUPERVISOR:APPROVED", "Approved by Supervisor"],
+      ["RS:APPROVED", "Approved by RS"],
+      ["HQ:APPROVED", "Final approved by HQ"],
+      ["AUTO:APPROVED", "Auto-approved"],
+      ["SUPERVISOR:REJECTED", "Rejected by Supervisor"],
+      ["RS:REJECTED", "Rejected by RS"],
+      ["HQ:REJECTED", "Rejected by HQ"],
+    ],
+  },
+];
+
 export function ChangeChip({ pct, flagged }: { pct: string | null; flagged: boolean }) {
   if (pct === null || pct === undefined) return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-prism-muted">No reference</span>;
   const value = Number(pct);
@@ -65,6 +90,8 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   const [view, setView] = useState<"queue" | "all">("queue");
   const [search, setSearch] = useState("");
+  // Who decided what: prices a stage approved or rejected at any point.
+  const [decidedBy, setDecidedBy] = useState("");
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [approving, setApproving] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -80,6 +107,9 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   if (flaggedOnly) params.set("flagged", "true");
   if (view === "all") params.set("view", "all");
   if (search.trim()) params.set("search", search.trim());
+  // "status:PENDING_SUPERVISOR" = waiting there now; "SUPERVISOR:APPROVED" = decided at some point.
+  if (decidedBy.startsWith("status:")) params.set("status", decidedBy.slice(7));
+  else if (decidedBy) params.set("decidedBy", decidedBy);
   const queue = useRebasingQuery<QueueResponse>(`/price-reviews?${params}`, reloadKey);
   const { loading, error } = queue;
   // Only hide decided quotes until the refetch lands; after that the server is
@@ -178,10 +208,26 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
           <div className="inline-flex self-start rounded-full bg-prism-bg p-1">
             {([["queue", "To review"], ["all", "All prices"]] as const).map(([key, label]) => (
-              <button key={key} type="button" onClick={() => { setView(key); setPage(1); setSelected(new Set()); }} className={clsx("rounded-full px-4 py-1.5 text-xs font-bold", view === key ? "bg-white text-prism-purple shadow-sm" : "text-prism-muted")}>{label}</button>
+              <button key={key} type="button" onClick={() => { setView(key); if (key === "queue") setDecidedBy(""); setPage(1); setSelected(new Set()); }} className={clsx("rounded-full px-4 py-1.5 text-xs font-bold", view === key ? "bg-white text-prism-purple shadow-sm" : "text-prism-muted")}>{label}</button>
             ))}
           </div>
           <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); setSelected(new Set()); }} placeholder="Search product, outlet, market or reader" className="sm:w-72" />
+          <label className="flex items-center gap-2 rounded-full bg-prism-bg px-3 py-1.5 text-xs font-bold text-prism-text">
+            Show
+            <select
+              value={decidedBy}
+              onChange={(event) => { setDecidedBy(event.target.value); if (event.target.value) setView("all"); setPage(1); setSelected(new Set()); }}
+              className="bg-transparent text-xs font-bold text-prism-purple outline-none"
+              aria-label="Filter by where a price is waiting or who decided it"
+            >
+              <option value="">All prices</option>
+              {FILTER_GROUPS.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+          </label>
         </div>
         {selectable.length > 0 && (
           <div className="flex flex-wrap items-center gap-2">
@@ -285,7 +331,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           </article>
         ))}
         {!loading && quotes.length === 0 && !error && (
-          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}.</p>
+          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : decidedBy ? `No prices ${FILTER_GROUPS.flatMap((g) => g.options).find(([v]) => v === decidedBy)?.[1].toLowerCase()}` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}.</p>
         )}
       </div>
 
