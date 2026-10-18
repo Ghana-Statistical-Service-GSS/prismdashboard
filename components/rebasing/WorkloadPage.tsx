@@ -54,10 +54,15 @@ export function WorkloadPage() {
 
   useEffect(() => { loadDashboardUser().then(setUser).catch(() => {}); }, []);
   const periods = useRebasingQuery<{ periods: Period[] }>("/periods");
-  const normal = useMemo(() => (periods.data?.periods || []).filter((p) => p.period_type === "NORMAL" && p.status !== "UPCOMING")
+  // Backfill months are collected in weeks too; only an older backfill with
+  // one catch-up window (weekly === false) has no weeks to balance.
+  const months = useMemo(() => (periods.data?.periods || []).filter((p) => p.weekly !== false && p.status !== "UPCOMING")
     .sort((a, b) => b.observation_month.localeCompare(a.observation_month)), [periods.data]);
-  const selectedId = periodId ?? normal.find((p) => p.status === "OPEN")?.period_id ?? normal[0]?.period_id ?? null;
-  const period = normal.find((p) => p.period_id === selectedId) || null;
+  const selectedId = periodId
+    ?? months.find((p) => p.status === "OPEN" && p.period_type === "NORMAL")?.period_id
+    ?? months.find((p) => p.status === "OPEN")?.period_id
+    ?? months[0]?.period_id ?? null;
+  const period = months.find((p) => p.period_id === selectedId) || null;
 
   const overview = useRebasingQuery<Overview>(selectedId ? `/periods/${selectedId}/workload` : null, version);
   const requests = useRebasingQuery<{ requests: WeekRequest[] }>(selectedId ? `/periods/${selectedId}/week-target-requests` : null, version);
@@ -103,11 +108,11 @@ export function WorkloadPage() {
             {data && (data.needs_approval ? " Your changes go to your Regional Statistician for approval." : " Your changes apply straight away.")}
           </p>
         </div>
-        {normal.length > 0 && (
+        {months.length > 0 && (
           <label className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-prism-text shadow-sm">
             Month
             <select value={selectedId ?? ""} onChange={(e) => setPeriodId(e.target.value)} className="bg-transparent text-sm font-black outline-none">
-              {normal.map((p) => <option key={p.period_id} value={p.period_id}>{`${periodLabel(p)}${p.status === "CLOSED" ? " (closed)" : ""}`}</option>)}
+              {months.map((p) => <option key={p.period_id} value={p.period_id}>{`${periodLabel(p)}${p.status === "CLOSED" ? " (closed)" : ""}`}</option>)}
             </select>
           </label>
         )}
@@ -115,7 +120,7 @@ export function WorkloadPage() {
 
       {notice && <p role="status" className="mt-5 rounded-2xl bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">{notice}</p>}
       {(periods.error || overview.error) && <p role="alert" className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{periods.error || overview.error}</p>}
-      {periods.data && normal.length === 0 && <Empty title="No current month yet">The weekly workload appears once HQ opens a current (non-backfill) month.</Empty>}
+      {periods.data && months.length === 0 && <Empty title="No open month yet">The weekly workload appears once HQ opens a month.</Empty>}
       {overview.loading && !data && selectedId && <Empty title="Loading workload…">Getting every market&apos;s weekly plan.</Empty>}
 
       {data && period && (
