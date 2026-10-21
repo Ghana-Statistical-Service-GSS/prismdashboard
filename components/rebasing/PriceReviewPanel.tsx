@@ -11,6 +11,16 @@ import { RebasingApiError, ReviewQuote, ReviewStatus, formatDateTime, formatMone
 import { useRebasingQuery } from "./useRebasingQuery";
 
 type QueueResponse = { queue: string; statuses: ReviewStatus[]; actionable_statuses: ReviewStatus[]; total: number; quotes: ReviewQuote[] };
+type FilterOptions = {
+  scope: "MARKETS" | "REGION" | "NATIONAL";
+  regions: { region_id: string; region_name: string }[];
+  markets: { market_id: string; market_name: string; region_id: string }[];
+  readers: { reader_id: string; reader_name: string; markets: string[] }[];
+  items: { item_id: string; item_code: string; item_name: string }[];
+  products: { product_id: string; product_name: string }[];
+};
+type Narrow = { regionId: string; marketId: string; readerId: string; itemId: string; productId: string };
+const NO_NARROW: Narrow = { regionId: "", marketId: "", readerId: "", itemId: "", productId: "" };
 type BulkResult = { approved: { quote_id: string }[]; skipped: { quote_id: string; code: string; message: string }[] };
 
 // Where a price is in the review chain, as reviewers see it.
@@ -73,6 +83,21 @@ const FILTER_GROUPS: { label: string; options: [string, string][] }[] = [
   },
 ];
 
+function FilterSelect({ label, value, onChange, options, disabled = false, placeholder }: {
+  label: string; value: string; onChange: (value: string) => void; options: [string, string][]; disabled?: boolean; placeholder?: string;
+}) {
+  return (
+    <label className={clsx("flex max-w-full items-center gap-2 rounded-full bg-prism-bg px-3 py-1.5 text-xs font-bold text-prism-text", disabled && "opacity-50")}>
+      {label}
+      <select value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}
+        className="max-w-[12rem] truncate bg-transparent text-xs font-bold text-prism-purple outline-none" aria-label={`Filter by ${label.toLowerCase()}`}>
+        <option value="">{placeholder || `All ${label.toLowerCase()}s`}</option>
+        {options.map(([id, name]) => <option key={id} value={id}>{name}</option>)}
+      </select>
+    </label>
+  );
+}
+
 export function ChangeChip({ pct, flagged }: { pct: string | null; flagged: boolean }) {
   if (pct === null || pct === undefined) return <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-bold text-prism-muted">No reference</span>;
   const value = Number(pct);
@@ -92,6 +117,8 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   const [search, setSearch] = useState("");
   // Who decided what: prices a stage approved or rejected at any point.
   const [decidedBy, setDecidedBy] = useState("");
+  // Region / market / reader / item / product, within the reviewer's scope.
+  const [narrow, setNarrow] = useState<Narrow>(NO_NARROW);
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [approving, setApproving] = useState<Set<string>>(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
@@ -110,7 +137,26 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   // "status:PENDING_SUPERVISOR" = waiting there now; "SUPERVISOR:APPROVED" = decided at some point.
   if (decidedBy.startsWith("status:")) params.set("status", decidedBy.slice(7));
   else if (decidedBy) params.set("decidedBy", decidedBy);
+  for (const [key, value] of Object.entries(narrow)) if (value) params.set(key, value);
   const queue = useRebasingQuery<QueueResponse>(`/price-reviews?${params}`, reloadKey);
+  const optionParams = new URLSearchParams({ periodId });
+  if (narrow.regionId) optionParams.set("regionId", narrow.regionId);
+  if (narrow.marketId) optionParams.set("marketId", narrow.marketId);
+  if (narrow.itemId) optionParams.set("itemId", narrow.itemId);
+  const options = useRebasingQuery<FilterOptions>(`/price-reviews/filters?${optionParams}`).data;
+  // A narrower choice is cleared when the wider one it depends on changes.
+  const setFilter = (key: keyof Narrow, value: string) => {
+    setNarrow((current) => {
+      const next = { ...current, [key]: value };
+      if (key === "regionId") { next.marketId = ""; next.readerId = ""; }
+      if (key === "marketId") next.readerId = "";
+      if (key === "itemId") next.productId = "";
+      return next;
+    });
+    setPage(1);
+    setSelected(new Set());
+  };
+  const narrowed = Object.values(narrow).some(Boolean);
   const { loading, error } = queue;
   // Only hide decided quotes until the refetch lands; after that the server is
   // the truth (a rejected quote corrected by the reader returns with the same id).
@@ -243,6 +289,29 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 border-b border-prism-border/60 px-5 py-3">
+        {options?.scope === "NATIONAL" && (
+          <FilterSelect label="Region" value={narrow.regionId} onChange={(value) => setFilter("regionId", value)}
+            options={options.regions.map((r) => [r.region_id, r.region_name])} />
+        )}
+        {options?.scope !== "MARKETS" || (options?.markets.length ?? 0) > 1 ? (
+          <FilterSelect label="Market" value={narrow.marketId} onChange={(value) => setFilter("marketId", value)}
+            options={(options?.markets || []).map((m) => [m.market_id, m.market_name])} />
+        ) : null}
+        <FilterSelect label="Reader" value={narrow.readerId} onChange={(value) => setFilter("readerId", value)}
+          options={(options?.readers || []).map((r) => [r.reader_id, narrow.marketId || r.markets.length !== 1 ? r.reader_name : `${r.reader_name} · ${r.markets[0]}`])} />
+        <FilterSelect label="Item" value={narrow.itemId} onChange={(value) => setFilter("itemId", value)}
+          options={(options?.items || []).map((i) => [i.item_id, i.item_name])} />
+        <FilterSelect label="Product" value={narrow.productId} onChange={(value) => setFilter("productId", value)} disabled={!narrow.itemId}
+          placeholder={narrow.itemId ? "All products" : "Choose an item first"}
+          options={(options?.products || []).map((p) => [p.product_id, p.product_name])} />
+        {narrowed && (
+          <button type="button" onClick={() => { setNarrow(NO_NARROW); setPage(1); setSelected(new Set()); }} className="rounded-full px-3 py-1.5 text-xs font-bold text-prism-purple hover:bg-prism-purple/10">
+            Clear filters
+          </button>
+        )}
+      </div>
+
       {notice && <p role="status" className="mx-5 mt-4 rounded-2xl bg-emerald-50 px-4 py-2.5 text-xs font-semibold text-emerald-800">{notice}</p>}
       {(error || actionError) && <p role="alert" className="mx-5 mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-2.5 text-xs text-red-700">{error || actionError}</p>}
 
@@ -331,7 +400,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           </article>
         ))}
         {!loading && quotes.length === 0 && !error && (
-          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : decidedBy ? `No prices ${FILTER_GROUPS.flatMap((g) => g.options).find(([v]) => v === decidedBy)?.[1].toLowerCase()}` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}.</p>
+          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : decidedBy ? `No prices ${FILTER_GROUPS.flatMap((g) => g.options).find(([v]) => v === decidedBy)?.[1].toLowerCase()}` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}{narrowed ? " for the chosen filters" : ""}.</p>
         )}
       </div>
 
