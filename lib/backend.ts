@@ -18,6 +18,11 @@ export function rebasingDashboardBackendUrl(path: string) {
   return `${BACKEND_URL}/api/v1/rebasing/dashboard${path}`;
 }
 
+// The PPI initiation module (/api/v1/ppi/dashboard).
+export function ppiDashboardBackendUrl(path: string) {
+  return `${BACKEND_URL}/api/v1/ppi/dashboard${path}`;
+}
+
 type BackendRequestInit = {
   method?: string;
   headers?: Record<string, string>;
@@ -31,6 +36,10 @@ export function dashboardBackendRequest(path: string, init: BackendRequestInit =
 
 export function rebasingDashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
   return backendRequest(rebasingDashboardBackendUrl(path), init);
+}
+
+export function ppiDashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
+  return backendRequest(ppiDashboardBackendUrl(path), init);
 }
 
 // Server-to-server requests use the Node HTTP client so connection failures and

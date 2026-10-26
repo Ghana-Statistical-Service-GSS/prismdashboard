@@ -3,24 +3,28 @@
 import { useSyncExternalStore } from "react";
 
 // Which collection the dashboard shows: Market Reading (the monthly rebasing
-// collection, the default) or Market Initiation (the one-time exercise). The
+// collection, the default), Market Initiation (the one-time exercise) or PPI
+// (producer price initiation review). The
 // choice filters the sidebar and decides where "Dashboard" goes. It is kept in
 // a cookie (so the server-side redirect after sign-in can honour it) and
 // mirrored in memory for the components that read it.
-export type DashboardModule = "reading" | "initiation";
+export type DashboardModule = "reading" | "initiation" | "ppi";
 
 export const MODULE_COOKIE = "prism_module";
 export const MODULE_HOME: Record<DashboardModule, string> = {
   reading: "/dashboard/market-reading",
   initiation: "/dashboard",
+  ppi: "/ppi/review",
 };
 export const MODULE_LABEL: Record<DashboardModule, string> = {
   reading: "Market Reading",
   initiation: "Market Initiation",
+  ppi: "PPI Initiation",
 };
 
 // Pages that belong to one collection only; visiting one switches the module.
 const READING_PATHS = ["/dashboard/market-reading", "/market-reading", "/collection-calendar"];
+const PPI_PATHS = ["/ppi"];
 const INITIATION_PATHS = ["/reports", "/validations", "/validation", "/sms", "/email-alerts", "/photos", "/field-officers",
   "/threshold-exception", "/missing-prices", "/assignments"];
 
@@ -28,6 +32,7 @@ const startsWith = (pathname: string, base: string) => pathname === base || path
 
 export function moduleForPath(pathname: string): DashboardModule | null {
   if (READING_PATHS.some((base) => startsWith(pathname, base))) return "reading";
+  if (PPI_PATHS.some((base) => startsWith(pathname, base))) return "ppi";
   if (pathname === "/dashboard" || INITIATION_PATHS.some((base) => startsWith(pathname, base))) return "initiation";
   return null;
 }
@@ -35,7 +40,7 @@ export function moduleForPath(pathname: string): DashboardModule | null {
 function readCookie(): DashboardModule {
   if (typeof document === "undefined") return "reading";
   const match = document.cookie.match(new RegExp(`(?:^|; )${MODULE_COOKIE}=([^;]*)`));
-  return match?.[1] === "initiation" ? "initiation" : "reading";
+  return match?.[1] === "initiation" || match?.[1] === "ppi" ? match[1] : "reading";
 }
 
 let current: DashboardModule | null = null;

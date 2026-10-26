@@ -8,6 +8,7 @@ import { DashboardModule, MODULE_HOME, MODULE_LABEL, setDashboardModule, useDash
 const OPTIONS: { module: DashboardModule; hint: string; dot: string }[] = [
   { module: "reading", hint: "Monthly price collection", dot: "bg-prism-teal" },
   { module: "initiation", hint: "One-time outlet and product setup", dot: "bg-prism-purple" },
+  { module: "ppi", hint: "Producer price initiation review", dot: "bg-amber-500" },
 ];
 
 // Top-bar dropdown: choose which collection the whole dashboard shows.
