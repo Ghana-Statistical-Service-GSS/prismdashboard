@@ -82,6 +82,13 @@ async function forward(request: NextRequest, context: { params: Promise<{ path?:
   const retryAfter = response.headers.get("retry-after");
   if (retryAfter) result.headers.set("Retry-After", retryAfter);
   const code = data?.error?.code;
+  // For whoever sets the deployment up: did this app pass the browser's
+  // address and its key (yes/no only, never values)? Without both the
+  // backend answers FIRM_NOT_CONFIGURED to code entry and link lookups.
+  if (code === "FIRM_NOT_CONFIGURED") {
+    const key = process.env.PPI_FIRM_PROXY_SECRET;
+    result.headers.set("X-Firm-Proxy-Check", `address=${ip ? "yes" : "no"}; key=${key && key.length >= 16 ? "yes" : "no"}`);
+  }
   const ended = method === "DELETE" && path[2] === "session" && response.ok;
   if (ended || code === "FIRM_SESSION_REQUIRED" || code === "FIRM_SESSION_EXPIRED") {
     result.cookies.set(COOKIE, "", { httpOnly: true, sameSite: "strict", secure: secure(request), path: COOKIE_PATH, maxAge: 0 });

@@ -39,8 +39,14 @@ export function sameOrigin(request: HeaderSource) {
 // The browser's address: the last X-Forwarded-For hop, the one the reverse
 // proxy in front of this app appended (earlier hops are whatever the client
 // sent). X-Real-IP only when PRISM_FIRM_TRUST_X_REAL_IP=1 says the reverse
-// proxy sets it (and overwrites any sent by the client).
+// proxy sets it (and overwrites any sent by the client); on Netlify,
+// x-nf-client-connection-ip (set by Netlify's edge, never the client's) only
+// when PRISM_FIRM_TRUST_NF_IP=1.
 export function clientAddress(request: HeaderSource) {
+  if (process.env.PRISM_FIRM_TRUST_NF_IP === "1") {
+    const nf = request.headers.get("x-nf-client-connection-ip")?.trim();
+    if (nf) return nf;
+  }
   if (process.env.PRISM_FIRM_TRUST_X_REAL_IP === "1") {
     const real = request.headers.get("x-real-ip")?.trim();
     if (real) return real;

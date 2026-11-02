@@ -34,3 +34,13 @@ test("client address: the proxy-appended last X-Forwarded-For hop; X-Real-IP onl
   delete process.env.PRISM_FIRM_TRUST_X_REAL_IP;
   assert.equal(clientAddress(req({})), null);
 });
+
+test("client address on Netlify: x-nf-client-connection-ip only when PRISM_FIRM_TRUST_NF_IP=1", () => {
+  delete process.env.PRISM_FIRM_TRUST_NF_IP;
+  assert.equal(clientAddress(req({ "x-nf-client-connection-ip": "198.51.100.4" })), null, "not believed unless the deployment says so");
+  assert.equal(clientAddress(req({ "x-nf-client-connection-ip": "198.51.100.4", "x-forwarded-for": "203.0.113.9" })), "203.0.113.9");
+  process.env.PRISM_FIRM_TRUST_NF_IP = "1";
+  assert.equal(clientAddress(req({ "x-nf-client-connection-ip": "198.51.100.4", "x-forwarded-for": "6.6.6.6" })), "198.51.100.4");
+  assert.equal(clientAddress(req({ "x-forwarded-for": "6.6.6.6, 203.0.113.9" })), "203.0.113.9", "falls back when the header is absent");
+  delete process.env.PRISM_FIRM_TRUST_NF_IP;
+});

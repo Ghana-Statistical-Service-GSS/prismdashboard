@@ -20,7 +20,9 @@ type Phase =
   | { kind: "code"; message?: string; resumed?: boolean }
   | { kind: "locked"; until: number; busy?: boolean }
   | { kind: "form"; csrf: string; form: FirmFormResponse }
-  | { kind: "offline" };
+  | { kind: "offline" }
+  // The server answered that the form is switched off or not set up (503).
+  | { kind: "unavailable" };
 
 export function FirmApp({ slug }: { slug: string }) {
   const [phase, setPhase] = useState<Phase>({ kind: "loading" });
@@ -33,7 +35,7 @@ export function FirmApp({ slug }: { slug: string }) {
     if (answer.data) { setPhase({ kind: "form", csrf, form: answer.data }); return; }
     if (answer.status === 410) setPhase({ kind: "closed", reason: answer.error?.closedReason ?? null });
     else if (answer.status === 401 || answer.status === 403) setPhase({ kind: "code" });
-    else setPhase({ kind: "offline" });
+    else setPhase({ kind: unavailable(answer) ? "unavailable" : "offline" });
   }, [slug]);
 
   const start = useCallback(async () => {
@@ -42,7 +44,7 @@ export function FirmApp({ slug }: { slug: string }) {
       // Too many requests from this network (a lookup flood limit, shared by
       // everyone behind the same address): a neutral wait page.
       if (answer.status === 429) return setPhase({ kind: "locked", busy: true, until: Date.now() + (answer.error?.retryAfterSeconds || 60) * 1000 });
-      if (!answer.data) return setPhase({ kind: "offline" });
+      if (!answer.data) return setPhase({ kind: unavailable(answer) ? "unavailable" : "offline" });
       if (answer.data.session && answer.data.state === "CLOSED") return setPhase({ kind: "closed", reason: answer.data.closedReason });
       if (answer.data.session) return await openForm(answer.data.session.csrfToken);
       return setPhase({ kind: "code" });
@@ -114,6 +116,13 @@ export function FirmApp({ slug }: { slug: string }) {
           <Button onClick={() => { setPhase({ kind: "loading" }); void start(); }}>Try again</Button>
         </Message>
       );
+    case "unavailable":
+      return (
+        <Message title="The online form is not available right now">
+          <p>Please try again later. If this continues, contact your GSS enumerator: they can also complete the questionnaire with you.</p>
+          <Button onClick={() => { setPhase({ kind: "loading" }); void start(); }}>Try again</Button>
+        </Message>
+      );
     case "closed":
       return <Closed reason={phase.reason} justSent={phase.justSent} copy={phase.copy} />;
     case "locked":
@@ -139,6 +148,10 @@ export function FirmApp({ slug }: { slug: string }) {
       return null;
   }
 }
+
+// The form is off or not set up on the server (not a connection problem).
+const unavailable = (answer: { status: number; error?: { code?: string } | null }) =>
+  answer.status === 503 && ["FIRM_NOT_CONFIGURED", "FIRM_NOT_AVAILABLE"].includes(answer.error?.code || "");
 
 function Message({ title, children }: { title: string; children: React.ReactNode }) {
   const ref = useRef<HTMLHeadingElement>(null);
