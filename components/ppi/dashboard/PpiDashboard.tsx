@@ -7,12 +7,13 @@ import { loadDashboardUser } from "@/lib/dashboard-user-client";
 import { ppiKeys } from "../api";
 import { invalidatePpi, usePpiQuery } from "../usePpiQuery";
 import type { Breakdown, GroupLevel, GroupRow, Option, Overview, Stage, ViewLevel } from "./types";
-import { dateTime, LEVEL_LABEL, QUESTIONNAIRE_SHORT } from "./format";
+import { dateTime, LEVEL_LABEL, MODE_LABEL, QUESTIONNAIRE_SHORT } from "./format";
 import { HeadlineCards, WorkflowStrip } from "./Headline";
 import { Comparison, type Metric, type SortChoice } from "./Comparison";
 import { EstablishmentDetail, EstablishmentList } from "./Establishments";
 import { CollectionActivity, NeedsAttention, ReviewBottlenecks } from "./Monitoring";
 import { CorrectionsAndQuality, QuestionnaireCompleteness, SyncAndFreshness } from "./Quality";
+import { SelfCompletionPanel } from "./SelfCompletion";
 import { focusRing, Notice, PageLink, Segmented } from "./ui";
 import { apiQuery, type DashboardState, type StatePatch, useDashboardState } from "./useDashboardState";
 
@@ -253,6 +254,8 @@ export function PpiDashboard() {
 
         <CollectionActivity userId={user.user_id} query={filterQuery} from={from} to={to} onRange={(f, t) => update({ from: f, to: t })} />
 
+        <SelfCompletionPanel overview={o} href={href} />
+
         <QuestionnaireCompleteness overview={o} />
 
         <div className="grid items-start gap-6 xl:grid-cols-2">
@@ -319,7 +322,7 @@ function FilterBar({ overview, state, options, onFilter, href }: {
   if (state.initiationId) crumbs.push({ label: "Establishment", href: "" });
 
   const select = "min-h-10 w-full rounded-xl border border-prism-border bg-white px-3 py-2 text-xs font-bold text-prism-text";
-  const active = [state.regionId, state.districtId, state.supervisorId, state.enumeratorId, state.questionnaireType].filter(Boolean).length;
+  const active = [state.regionId, state.districtId, state.supervisorId, state.enumeratorId, state.questionnaireType, state.mode].filter(Boolean).length;
   return (
     <section aria-label="Filters" className="mt-6 rounded-3xl border border-prism-border/70 bg-white p-4 shadow-sm sm:p-5">
       {/* Phones: the filters fold away behind one button. */}
@@ -372,6 +375,14 @@ function FilterBar({ overview, state, options, onFilter, href }: {
             {(options?.questionnaireTypes ?? []).map((qt) => <option key={qt} value={qt}>{QUESTIONNAIRE_SHORT[qt] ?? qt}</option>)}
           </select>
         </label>
+        <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
+          Completed by
+          <select value={state.mode ?? ""} onChange={(e) => onFilter({ mode: e.target.value || null })} className={clsx(select, focusRing)}>
+            <option value="">Firm or enumerator</option>
+            <option value="SELF">{MODE_LABEL.SELF}</option>
+            <option value="ENUMERATOR">{MODE_LABEL.ENUMERATOR}</option>
+          </select>
+        </label>
       </div>
 
       <div className="mt-4 flex flex-col gap-2 border-t border-prism-border/60 pt-3 sm:flex-row sm:items-center sm:justify-between">
@@ -390,7 +401,7 @@ function FilterBar({ overview, state, options, onFilter, href }: {
           </ol>
         </nav>
         <p className="text-[11px] text-prism-muted">
-          Showing the current status{state.questionnaireType ? ` · ${QUESTIONNAIRE_SHORT[state.questionnaireType]} only` : ""}. Filters apply to every panel; the activity period changes only Collection activity.
+          Showing the current status{state.questionnaireType ? ` · ${QUESTIONNAIRE_SHORT[state.questionnaireType]} only` : ""}{state.mode === "SELF" || state.mode === "ENUMERATOR" ? ` · ${MODE_LABEL[state.mode].toLowerCase()} only` : ""}. Filters apply to every panel; the activity period changes only Collection activity.
         </p>
       </div>
     </section>

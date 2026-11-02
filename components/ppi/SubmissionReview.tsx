@@ -93,6 +93,11 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           {outcome.stale ? <button className="rounded-full bg-white px-3 py-1 text-xs font-bold ring-1 ring-rose-200" onClick={() => { setOutcome(null); invalidatePpi(ppiKeys.submission(submissionId)); }}>Reload</button> : null}
         </div>
       ) : null}
+      {interview.selfCompleted ? (
+        <p role="status" className="rounded-2xl bg-violet-50 p-4 text-sm font-semibold text-violet-900">
+          Self-completed: the firm entered answers on the web form; the enumerator checked them and submitted. The change history shows who entered what.
+        </p>
+      ) : null}
 
       <Section title="General information" note="Preloaded and corrected during the interview; the preload is shown where it differs.">
         <dl className="grid gap-x-6 gap-y-3 sm:grid-cols-2">
@@ -127,7 +132,9 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               ? "Verified (accuracy below 5 m, within 20 m)"
               : snap.gpsVerdict?.accuracyOk && snap.gpsVerdict.distanceOk === false && interview.establishmentInfo.gpsDistanceReason
                 ? "Captured more than 20 m from the firm (reason given)"
-                : "Not verified"}
+                : interview.selfCompleted && !interview.gpsChecks.length
+                  ? "Not verified: completed by the firm on the web form (no visit)"
+                  : "Not verified"}
             tone={snap.gpsVerdict?.verified ? "ok" : "warn"}
           />
         </dl>
@@ -457,7 +464,7 @@ function AuditPage({ initiationId, before, onOlder }: { initiationId: string; be
       <ol className="space-y-2 text-xs">
         {audit.data.changes.map((c) => (
           <li key={c.changeId} className="rounded-xl bg-prism-bg/70 p-3">
-            <p className="font-bold">{c.entityType.toLowerCase().replace("_", " ")} {c.operation.toLowerCase()} · {c.actorName} · {formatDateTime(c.loggedAt)}</p>
+            <p className="font-bold">{c.entityType.toLowerCase().replace("_", " ")} {c.operation.toLowerCase()} · {c.source === "FIRM" ? "entered by the firm (web form)" : c.actorName} · {formatDateTime(c.loggedAt)}</p>
             <ul className="mt-1">
               {Object.entries(c.changes).map(([field, v]) => (
                 <li key={field}><span className="text-prism-muted">{field}:</span> {String(v.oldDisplay ?? v.old ?? "—")} → {String(v.newDisplay ?? v.new ?? "—")}</li>

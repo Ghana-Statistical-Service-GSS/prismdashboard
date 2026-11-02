@@ -111,6 +111,25 @@ export type EstablishmentRow = {
   // Warning only: specifications whose current price differs from the same
   // month in the history (server copy); null until measured.
   priceMonthMismatches: number | null;
+  // SELF: the firm saved answers on its web form; ENUMERATOR otherwise.
+  // inviteStatus: the latest firm invite (null: never invited).
+  mode?: CompletionMode;
+  inviteStatus?: InviteStatus | null;
+  messageFailures?: number;
+};
+
+export type CompletionMode = "SELF" | "ENUMERATOR";
+export type InviteStatus = "INVITED" | "OPENED" | "FIRM_FILLING" | "HANDED_OVER" | "TAKEN_OVER" | "EXPIRED" | "CLOSED";
+
+export type SelfCompletion = {
+  // false: the server's database does not have the firm web form yet.
+  available: boolean;
+  mode: Record<CompletionMode, number>;
+  selfCompletedSubmitted: number;
+  invited: number;
+  invites: Record<InviteStatus, number>;
+  withMessageFailures: number;
+  messageFailures: number;
 };
 
 export type Ratio = { done: number; expected: number; pct: number | null };
@@ -157,6 +176,7 @@ export type Filters = {
   supervisorId: string | null;
   enumeratorId: string | null;
   questionnaireType: string | null;
+  mode?: CompletionMode | null;
 };
 
 export type Overview = {
@@ -217,6 +237,7 @@ export type Overview = {
     lastDownloadAt: string | null;
     lastChangeAt: string | null;
   };
+  selfCompletion?: SelfCompletion;
   freshness?: {
     generatedAt: string;
     lastSubmittedAt: string | null;

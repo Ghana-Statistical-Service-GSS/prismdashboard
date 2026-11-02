@@ -51,7 +51,14 @@ async function roleFor(token: string) {
   return role;
 }
 
+// The firm's public web form (/f/<link>): no dashboard session, its own
+// access code and API (/api/firm, outside this matcher).
+function isPublicFirmPath(pathname: string) {
+  return pathname === "/f" || pathname.startsWith("/f/");
+}
+
 export async function proxy(request: NextRequest) {
+  if (isPublicFirmPath(request.nextUrl.pathname)) return NextResponse.next();
   const signedIn = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   const isLogin = request.nextUrl.pathname === "/";
 

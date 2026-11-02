@@ -1,4 +1,4 @@
-import type { AttentionKind, Series, Stage, SyncState, ViewLevel, WorkflowStatus } from "./types";
+import type { AttentionKind, CompletionMode, InviteStatus, Series, Stage, SyncState, ViewLevel, WorkflowStatus } from "./types";
 
 // Number and date formatting as on the CPI dashboards (en-GH).
 export const number = new Intl.NumberFormat("en-GH");
@@ -36,6 +36,18 @@ export function tone(value: number | null | undefined) {
 }
 
 export const STAGE_SHORT: Record<Stage, string> = { SUPERVISOR: "Supervisor", RS: "RS", HQ: "HQ" };
+
+// Firm self-interview: who completed it and where the firm's invite stands.
+export const MODE_LABEL: Record<CompletionMode, string> = { SELF: "Self-completed by firm", ENUMERATOR: "Enumerator" };
+export const INVITE: Record<InviteStatus, { label: string; style: string }> = {
+  INVITED: { label: "Invited", style: "bg-slate-100 text-slate-700" },
+  OPENED: { label: "Opened by firm", style: "bg-sky-100 text-sky-800" },
+  FIRM_FILLING: { label: "Firm filling", style: "bg-violet-100 text-violet-800" },
+  HANDED_OVER: { label: "Handed over", style: "bg-emerald-100 text-emerald-800" },
+  TAKEN_OVER: { label: "Taken over", style: "bg-amber-100 text-amber-900" },
+  EXPIRED: { label: "Invite expired", style: "bg-rose-100 text-rose-800" },
+  CLOSED: { label: "Invite closed", style: "bg-slate-100 text-slate-700" },
+};
 export const STAGE_LONG: Record<Stage, string> = { SUPERVISOR: "Supervisor", RS: "Regional Statistician", HQ: "HQ" };
 export const SERIES_LABEL: Record<Series, string> = { SELLING: "Selling", PURCHASE: "Purchase", CONTRACT: "Contract" };
 export const QUESTIONNAIRE_SHORT: Record<string, string> = {

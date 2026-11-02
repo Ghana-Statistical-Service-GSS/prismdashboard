@@ -73,6 +73,9 @@ export type InterviewSnapshot = {
   revenue: { currency: Coded; referencePeriod: string; annual: Amount; quarterly: { id: string; year: number; quarter: number; amount: Amount }[] };
   categories: Category[];
   gpsChecks: { id: string; capturedAt: string; accuracyM: number | null; distanceM: string | null; clientDistanceM: number | null }[];
+  // The firm entered answers on its web form (self-completed); absent in
+  // snapshots made before the firm web form.
+  selfCompleted?: boolean;
 };
 export type Snapshot = {
   schemaVersion: number;
@@ -112,6 +115,9 @@ export type AuditChange = {
   changeId: number; entityType: string; recordId: string; operation: string;
   changes: Record<string, { old: unknown; new: unknown; oldDisplay?: string | null; newDisplay?: string | null }>;
   previousVersion: number | null; newVersion: number | null; actorName: string; loggedAt: string;
+  // FIRM: entered by the firm on its web form (actorName is then the
+  // enumerator who invited it).
+  source?: "FIRM" | "ENUMERATOR";
 };
 
 export class PpiApiError extends Error {

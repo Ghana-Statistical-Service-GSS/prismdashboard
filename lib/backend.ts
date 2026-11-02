@@ -23,6 +23,12 @@ export function ppiDashboardBackendUrl(path: string) {
   return `${BACKEND_URL}/api/v1/ppi/dashboard${path}`;
 }
 
+// The PPI firm self-interview (/api/v1/ppi/firm): the public web form,
+// authenticated by its own short-lived session, never by a dashboard login.
+export function ppiFirmBackendUrl(path: string) {
+  return `${BACKEND_URL}/api/v1/ppi/firm${path}`;
+}
+
 type BackendRequestInit = {
   method?: string;
   headers?: Record<string, string>;
@@ -40,6 +46,10 @@ export function rebasingDashboardBackendRequest(path: string, init: BackendReque
 
 export function ppiDashboardBackendRequest(path: string, init: BackendRequestInit = {}) {
   return backendRequest(ppiDashboardBackendUrl(path), init);
+}
+
+export function ppiFirmBackendRequest(path: string, init: BackendRequestInit = {}) {
+  return backendRequest(ppiFirmBackendUrl(path), init);
 }
 
 // Server-to-server requests use the Node HTTP client so connection failures and

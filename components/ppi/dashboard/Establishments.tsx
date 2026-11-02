@@ -6,7 +6,7 @@ import { TableSearch } from "@/components/common/TableSearch";
 import { ppiKeys } from "../api";
 import { usePpiQuery } from "../usePpiQuery";
 import type { Breakdown, EstablishmentRow, InitiationDetail, RemovalRequest, SpecObservations } from "./types";
-import { age, count, dateTime, QUESTIONNAIRE_SHORT, SERIES_LABEL, STATUS, statusText, SYNC } from "./format";
+import { age, count, dateTime, INVITE, QUESTIONNAIRE_SHORT, SERIES_LABEL, STATUS, statusText, SYNC } from "./format";
 import { CsvLink, focusRing, Notice, Panel, Pill } from "./ui";
 
 export const STATUS_FILTERS: { value: string; label: string }[] = [
@@ -93,6 +93,7 @@ export function EstablishmentList({ userId, query, status, search, page, onStatu
                     </div>
                     <Pill className={STATUS[row.status].style}>{statusText(row.status, row.reviewStage)}</Pill>
                   </div>
+                  <FirmNote row={row} />
                   <dl className="mt-3 grid grid-cols-3 gap-2 text-[11px]">
                     <div><dt className="text-prism-muted">Submissions</dt><dd className="font-black text-prism-text">{count(row.submissions)}</dd></div>
                     <div><dt className="text-prism-muted">Observations</dt><dd className="font-black text-prism-purple">{count(row.observations.total)}</dd></div>
@@ -134,6 +135,7 @@ export function EstablishmentList({ userId, query, status, search, page, onStatu
                         <Pill className={STATUS[row.status].style}>{statusText(row.status, row.reviewStage)}</Pill>
                         {row.waitingDays !== null && <span className="block text-[10px] text-prism-muted">{row.status === "RETURNED" ? "returned" : "waiting"} {age(row.waitingDays)}</span>}
                         {row.returns > 1 && <span className="block text-[10px] font-bold text-rose-700">returned {row.returns} times</span>}
+                        <FirmNote row={row} />
                       </td>
                       <td className="px-3 py-3 text-right tabular-nums">{count(row.submissions)}</td>
                       <td className="px-3 py-3 text-right tabular-nums">
@@ -338,6 +340,21 @@ function SpecCounts({ observations }: { observations: SpecObservations }) {
           {SERIES_LABEL[s]}: {c.current} current · {c.history} history{c.notAvailable ? ` · ${c.notAvailable} n/a` : ""}
         </span>
       ))}
+    </span>
+  );
+}
+
+// Firm self-interview: "Self-completed" when the firm entered answers on
+// the web form, the latest invite's status, and failed invite messages.
+// A status this screen does not know yet (a newer server): shown as sent.
+const UNKNOWN_INVITE = { label: "", style: "bg-slate-100 text-slate-700" };
+function FirmNote({ row }: { row: EstablishmentRow }) {
+  if (!row.inviteStatus && row.mode !== "SELF") return null;
+  return (
+    <span className="mt-1 flex flex-wrap items-center gap-1">
+      {row.mode === "SELF" && <Pill className="bg-violet-600 text-white">Self-completed</Pill>}
+      {row.inviteStatus && <Pill className={(INVITE[row.inviteStatus] ?? UNKNOWN_INVITE).style}>{(INVITE[row.inviteStatus] ?? { label: row.inviteStatus }).label}</Pill>}
+      {(row.messageFailures ?? 0) > 0 && <span className="text-[10px] font-bold text-rose-700">{row.messageFailures} message{row.messageFailures === 1 ? "" : "s"} not sent</span>}
     </span>
   );
 }

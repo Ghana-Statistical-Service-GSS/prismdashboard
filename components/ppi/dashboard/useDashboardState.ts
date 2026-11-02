@@ -18,6 +18,7 @@ const PARAMS = {
   supervisorId: "supervisor",
   enumeratorId: "reader",
   questionnaireType: "qt",
+  mode: "mode",
   view: "view",
   initiationId: "initiation",
   status: "status",
@@ -35,7 +36,7 @@ export type DashboardState = { -readonly [K in keyof typeof PARAMS]: string | nu
 export type StatePatch = Partial<DashboardState>;
 
 // The filters every request carries (the server ANDs them with the scope).
-export const FILTER_KEYS = ["regionId", "districtId", "supervisorId", "enumeratorId", "questionnaireType"] as const;
+export const FILTER_KEYS = ["regionId", "districtId", "supervisorId", "enumeratorId", "questionnaireType", "mode"] as const;
 
 export function apiQuery(state: DashboardState, extra: Record<string, string | null | undefined> = {}) {
   const query = new URLSearchParams();
