@@ -123,10 +123,19 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           {interview.questionnaireType === "OTHER" ? <Fact label="Sector" value={interview.establishmentInfo.sector ?? "—"} /> : null}
           <Fact
             label="Location check"
-            value={snap.gpsVerdict?.verified ? "Verified (accuracy below 5 m, within 20 m)" : "Not verified"}
+            value={snap.gpsVerdict?.verified
+              ? "Verified (accuracy below 5 m, within 20 m)"
+              : snap.gpsVerdict?.accuracyOk && snap.gpsVerdict.distanceOk === false && interview.establishmentInfo.gpsDistanceReason
+                ? "Captured more than 20 m from the firm (reason given)"
+                : "Not verified"}
             tone={snap.gpsVerdict?.verified ? "ok" : "warn"}
           />
         </dl>
+        {snap.gpsVerdict?.distanceOk === false && interview.establishmentInfo.gpsDistanceReason ? (
+          <p className="mt-3 whitespace-pre-line rounded-2xl bg-amber-50 p-3 text-sm text-amber-950">
+            <span className="font-bold">Enumerator&apos;s reason for the distance: </span>{interview.establishmentInfo.gpsDistanceReason}
+          </p>
+        ) : null}
         {interview.gpsChecks.length ? (
           <p className="mt-3 text-xs text-prism-muted">
             Latest capture {formatDateTime(interview.gpsChecks[interview.gpsChecks.length - 1].capturedAt)}: server-measured distance{" "}
@@ -146,12 +155,13 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
         <table className="mt-4 w-full text-sm">
           <caption className="sr-only">Major product categories</caption>
           <thead className="text-left text-[10px] font-black uppercase tracking-[0.12em] text-prism-muted">
-            <tr><th scope="col" className="py-2">Category</th><th scope="col">Revenue</th><th scope="col">Products</th><th scope="col"><span className="sr-only">Comment</span></th></tr>
+            <tr><th scope="col" className="py-2">Category</th><th scope="col">CPC</th><th scope="col">Revenue</th><th scope="col">Products</th><th scope="col"><span className="sr-only">Comment</span></th></tr>
           </thead>
           <tbody>
             {interview.categories.map((c) => (
               <tr key={c.id} className="border-t border-prism-border/50">
                 <td className="py-2 font-bold">{c.name}</td>
+                <td className="font-mono text-xs">{c.cpcCode ?? "—"}</td>
                 <td>{c.revenueBasis === "PERCENT" ? `${amountText(c.revenuePercent)} %` : amountText(c.revenueValue)}</td>
                 <td>{c.products.length} of {c.productCount ?? "?"}</td>
                 <td className="text-right">{comment("CATEGORY", c.id, c.name)}</td>
@@ -176,7 +186,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
       ) : null}
 
       {interview.categories.map((c) => c.products.map((p) => (
-        <Section key={p.id} title={`${c.name} › ${p.name}`} actions={comment("PRODUCT", p.id, p.name)}>
+        <Section key={p.id} title={`${c.name} › ${p.name}`} note={`CPC ${p.cpcCode ?? "—"}`} actions={comment("PRODUCT", p.id, p.name)}>
           {p.seasonality ? (
             <p className="mb-3 text-xs text-prism-muted">
               Seasonality: {p.seasonality.producedAllYear ? "produced all year" : `available ${p.seasonality.availableMonths.map((m) => MONTHS[m - 1]).join(", ")}`};
@@ -185,7 +195,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               {comment("SEASONALITY", p.id, `${p.name} seasonality`)}
             </p>
           ) : null}
-          {p.specifications.map((s, n) => <SpecificationView key={s.id} spec={s} n={n + 1} snap={snap} comment={comment} />)}
+          {p.specifications.map((s, n) => <SpecificationView key={s.id} spec={s} n={n + 1} snap={snap} places={d.places} comment={comment} />)}
         </Section>
       )))}
 
@@ -196,8 +206,8 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               <li key={e.reviewEventId} className="rounded-2xl bg-prism-bg/70 p-3 text-sm">
                 <p className="font-bold">{e.decision === "APPROVED" ? "Approved" : "Returned"} at {STAGE_LABEL[e.stage]} review · submission {e.submissionNo}</p>
                 <p className="text-xs text-prism-muted">{e.reviewerName}, {formatDateTime(e.reviewedAt)}</p>
-                {e.reason ? <p className="mt-1">{e.reason}</p> : null}
-                {e.comment ? <p className="mt-1 text-prism-muted">{e.comment}</p> : null}
+                {e.reason ? <p className="mt-1 whitespace-pre-line">{e.reason}</p> : null}
+                {e.comment ? <p className="mt-1 whitespace-pre-line text-prism-muted">{e.comment}</p> : null}
                 {e.issues.length ? <ul className="mt-1 list-disc pl-5 text-xs">{e.issues.map((i, k) => <li key={k}>{i.comment}</li>)}</ul> : null}
               </li>
             ))}
@@ -232,11 +242,24 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
   );
 }
 
-function SpecificationView({ spec, n, snap, comment }: { spec: Specification; n: number; snap: Snapshot; comment: (e: string, id: string, label: string, field?: string | null, subtle?: boolean) => ReactNode }) {
+// A construction count, its "not applicable (none)" answer, or unanswered.
+function countText(value: unknown, notApplicable: unknown) {
+  if (notApplicable === true) return "N/A (none)";
+  return value == null || value === "" ? "—" : String(value);
+}
+
+function SpecificationView({ spec, n, snap, places, comment }: {
+  spec: Specification; n: number; snap: Snapshot; places?: SubmissionDetail["places"];
+  comment: (e: string, id: string, label: string, field?: string | null, subtle?: boolean) => ReactNode;
+}) {
   const qt = snap.initiation.questionnaireType;
-  const t = spec.terms as Record<string, never>;
+  const t = spec.terms;
+  // A place id the snapshot names but the server could not name.
+  const placeName = (names: Record<string, string> | undefined, id: string | null | undefined, unknown: string) => (id ? names?.[id] ?? unknown : null);
+  const contractPlace = [placeName(places?.districts, t.contractDistrictId, "Unknown district"), placeName(places?.regions, t.contractRegionId, "Unknown region")]
+    .filter(Boolean).join(", ") || "—";
   const facts: [string, string][] = qt === "CONSTRUCTION"
-    ? [["Material", t.materialType ?? "—"], ["Customer", t.contractCustomer ?? "—"], ["Bridges", String(t.bridges ?? "—")], ["Culverts", String(t.culverts ?? "—")], ["Soil", t.soilType ?? "—"], ["Other details", t.contractSpecification || "—"]]
+    ? [["Material", t.materialType ?? "—"], ["Customer", t.contractCustomer ?? "—"], ["Contract location", contractPlace], ["Bridges", countText(t.bridges, t.bridgesNotApplicable)], ["Culverts", countText(t.culverts, t.culvertsNotApplicable)], ["Soil", t.soilType ?? "—"], ["Other details", t.contractSpecification || "—"]]
     : [
       ["Unit", codedText(snap.options, "unit", spec.details.unit)],
       ...(qt === "WHOLESALE_RETAIL" ? [["Size of transaction", t.transactionSizeText ?? "—"] as [string, string]] : []),
@@ -266,11 +289,18 @@ function SpecificationView({ spec, n, snap, comment }: { spec: Specification; n:
                   <th scope="row" className="py-1 pr-3 text-left font-bold">{SERIES_LABEL[s] ?? s}</th>
                   <td className="pr-3">
                     {current ? `${amountText(current.amount, `${codedText(snap.options, "currency", current.currency)} `)} (${monthLabel(current.month)})` : "—"}
+                    {current?.reason ? <span className="mt-0.5 block whitespace-pre-line text-[11px] text-amber-900">Reason: {current.reason}</span> : null}
                     {current ? comment("PRICE", current.id, `${SERIES_LABEL[s]} current`, "amount") : null}
                   </td>
                   {months.map((m) => {
                     const h = spec.prices.find((p) => p.series === s && p.kind === "HISTORY" && p.month === m);
-                    return <td key={m} className="group pr-3">{h ? amountText(h.amount) : "—"}{h ? comment("PRICE", h.id, `${SERIES_LABEL[s]} ${monthLabel(m)}`, "amount", true) : null}</td>;
+                    return (
+                      <td key={m} className="group pr-3">
+                        {h ? amountText(h.amount) : "—"}
+                        {h?.reason ? <span className="block whitespace-pre-line text-[11px] text-amber-900" title={h.reason}>Reason: {h.reason}</span> : null}
+                        {h ? comment("PRICE", h.id, `${SERIES_LABEL[s]} ${monthLabel(m)}`, "amount", true) : null}
+                      </td>
+                    );
                   })}
                 </tr>
               );
@@ -398,14 +428,32 @@ function DecisionForm({ decision, issues, onRemove, onClose, onSubmit }: {
   );
 }
 
+// Change history, newest first. "Older changes" adds the next page below
+// the ones already shown.
 function AuditPanel({ initiationId }: { initiationId: string }) {
-  const [before, setBefore] = useState<string | null>(null);
-  const path = `/initiations/${initiationId}/audit?limit=50${before ? `&before=${before}` : ""}`;
-  const audit = usePpiQuery<{ changes: AuditChange[]; nextBefore: string | null }>(ppiKeys.audit(initiationId, before ?? "first"), path);
-  if (audit.error) return <p role="alert" className="mt-3 text-sm text-rose-800">{audit.error}</p>;
-  if (!audit.data) return <p className="mt-3 text-sm text-prism-muted">Loading…</p>;
+  const [pages, setPages] = useState<(string | null)[]>([null]);
   return (
     <div className="mt-3 space-y-2">
+      {pages.map((before, k) => (
+        <AuditPage
+          key={before ?? "first"}
+          initiationId={initiationId}
+          before={before}
+          onOlder={k === pages.length - 1 ? (next) => setPages((list) => [...list, next]) : undefined}
+        />
+      ))}
+    </div>
+  );
+}
+
+function AuditPage({ initiationId, before, onOlder }: { initiationId: string; before: string | null; onOlder?: (next: string) => void }) {
+  const path = `/initiations/${initiationId}/audit?limit=50${before ? `&before=${before}` : ""}`;
+  const audit = usePpiQuery<{ changes: AuditChange[]; nextBefore: string | null }>(ppiKeys.audit(initiationId, before ?? "first"), path);
+  if (audit.error) return <p role="alert" className="text-sm text-rose-800">{audit.error}</p>;
+  if (!audit.data) return <p className="text-sm text-prism-muted">Loading…</p>;
+  const next = audit.data.nextBefore;
+  return (
+    <>
       <ol className="space-y-2 text-xs">
         {audit.data.changes.map((c) => (
           <li key={c.changeId} className="rounded-xl bg-prism-bg/70 p-3">
@@ -418,7 +466,7 @@ function AuditPanel({ initiationId }: { initiationId: string }) {
           </li>
         ))}
       </ol>
-      {audit.data.nextBefore ? <button onClick={() => setBefore(audit.data!.nextBefore)} className="rounded-full bg-white px-3 py-1.5 text-xs font-bold ring-1 ring-prism-border/70">Older changes</button> : null}
-    </div>
+      {next && onOlder ? <button onClick={() => onOlder(next)} className="rounded-full bg-white px-3 py-1.5 text-xs font-bold ring-1 ring-prism-border/70">Older changes</button> : null}
+    </>
   );
 }

@@ -5,6 +5,7 @@ import { useState } from "react";
 import clsx from "clsx";
 import { formatDateTime, ppiKeys, QUESTIONNAIRE_LABEL, STAGE_LABEL, type QueueItem } from "./api";
 import { usePpiQuery } from "./usePpiQuery";
+import { TableSearch } from "@/components/common/TableSearch";
 
 const STATUSES = [
   { value: "SUBMITTED", label: "Waiting for review" },
@@ -40,15 +41,8 @@ export function ReviewQueue() {
           <h1 className="mt-1 text-2xl font-black text-prism-text">Review queue</h1>
           <p className="mt-1 text-sm text-prism-muted">Submitted interviews, exactly as the enumerator submitted them.</p>
         </div>
-        <label className="flex w-full items-center gap-2 rounded-2xl bg-white px-4 py-2.5 shadow-sm ring-1 ring-prism-border/70 sm:w-72">
-          <span className="sr-only">Search establishments</span>
-          <input
-            value={search}
-            onChange={(event) => { setSearch(event.target.value); setPage(1); }}
-            placeholder="Search name or code"
-            className="w-full bg-transparent text-sm outline-none"
-          />
-        </label>
+        {/* Debounced: one request once typing pauses, not one per key. */}
+        <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search name or code" className="w-full sm:w-72" />
       </header>
 
       <div role="tablist" aria-label="Status" className="flex flex-wrap gap-2">

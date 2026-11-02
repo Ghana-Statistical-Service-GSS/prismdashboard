@@ -32,7 +32,7 @@ function isHqOnlyPath(pathname: string) {
 // lib/module-store), Market Reading by default.
 function moduleHome(request: NextRequest) {
   const chosen = request.cookies.get("prism_module")?.value;
-  return chosen === "initiation" ? "/dashboard" : chosen === "ppi" ? "/ppi/review" : "/dashboard/market-reading";
+  return chosen === "initiation" ? "/dashboard" : chosen === "ppi" ? "/ppi/dashboard" : "/dashboard/market-reading";
 }
 
 // The role check before restricted pages asked the backend on every

@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 
 // Which collection the dashboard shows: Market Reading (the monthly rebasing
 // collection, the default), Market Initiation (the one-time exercise) or PPI
-// (producer price initiation review). The
+// (producer price initiation). The
 // choice filters the sidebar and decides where "Dashboard" goes. It is kept in
 // a cookie (so the server-side redirect after sign-in can honour it) and
 // mirrored in memory for the components that read it.
@@ -14,7 +14,7 @@ export const MODULE_COOKIE = "prism_module";
 export const MODULE_HOME: Record<DashboardModule, string> = {
   reading: "/dashboard/market-reading",
   initiation: "/dashboard",
-  ppi: "/ppi/review",
+  ppi: "/ppi/dashboard",
 };
 export const MODULE_LABEL: Record<DashboardModule, string> = {
   reading: "Market Reading",

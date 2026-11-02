@@ -1,8 +1,9 @@
 "use client";
 
-// PPI review: shapes returned by /api/v1/ppi/dashboard/* (prism_backend/ppi),
-// the module's fetch helper and its cache keys. Nothing here is shared with
-// the Market Reading or Market Initiation modules.
+// PPI: review shapes returned by /api/v1/ppi/dashboard/* (prism_backend/ppi),
+// the module's fetch helper and its cache keys (dashboard shapes are in
+// ./dashboard/types.ts). Nothing here is shared with the Market Reading or
+// Market Initiation modules.
 
 export type Amount = { state: "NOT_RECORDED" | "REPORTED" | "NOT_AVAILABLE" | "NOT_APPLICABLE"; amount?: string | null; enteredAt?: string | null };
 export type Coded = { code: string | null; otherText: string };
@@ -26,12 +27,36 @@ export type QueueItem = {
   canDecide: boolean;
 };
 
-export type Price = { id: string; series: string; kind: "CURRENT" | "HISTORY"; month: string; amount: Amount; currency: Coded; version: number };
+// `reason`: the enumerator's explanation where a price check asked for one
+// (e.g. selling below purchase, a large change).
+export type Price = { id: string; series: string; kind: "CURRENT" | "HISTORY"; month: string; amount: Amount; currency: Coded; version: number; reason?: string | null };
+// prism_backend ppi/dto/tree.dto.js specificationDto terms. Optional: a
+// snapshot keeps the shape of the day it was submitted, so fields added
+// since are missing from older ones.
+export type SpecificationTerms = {
+  customerMarket?: Coded | null;
+  discount?: Coded | null;
+  paymentTerms?: Coded | null;
+  transactionSizeText?: string | null;
+  packaging?: Coded | null;
+  quantitySold?: string | null; // NUMERIC as text
+  saleFrequency?: Coded | null;
+  contractRegionId?: string | null;
+  contractDistrictId?: string | null;
+  materialType?: string | null;
+  contractCustomer?: string | null;
+  bridges?: number | null;
+  culverts?: number | null;
+  bridgesNotApplicable?: boolean;
+  culvertsNotApplicable?: boolean;
+  soilType?: string | null;
+  contractSpecification?: string | null;
+};
 export type Specification = {
   id: string; origin: string; isDraft: boolean; lastStep: string;
   details: { description: string; unit: Coded };
   priceCurrency: Coded | null;
-  terms: Record<string, unknown>;
+  terms: SpecificationTerms;
   prices: Price[];
 };
 export type Seasonality = {
@@ -39,12 +64,12 @@ export type Seasonality = {
   pricesSeasonal: boolean | null; hasNoSalePeriods: boolean | null; noSaleMonths: number[];
   salesLocations: { codes: string[]; otherText: string }; mainBuyer: Coded;
 };
-export type Product = { id: string; name: string; followUp: { otherUnitsRemain: boolean | null; otherArrangementsRemain: boolean | null }; seasonality: Seasonality | null; specifications: Specification[] };
-export type Category = { id: string; name: string; productCount: number | null; revenueBasis: "VALUE" | "PERCENT" | null; revenueValue: Amount; revenuePercent: Amount; products: Product[] };
+export type Product = { id: string; name: string; cpcCode?: string | null; followUp: { otherUnitsRemain: boolean | null; otherArrangementsRemain: boolean | null }; seasonality: Seasonality | null; specifications: Specification[] };
+export type Category = { id: string; name: string; cpcCode?: string | null; productCount: number | null; revenueBasis: "VALUE" | "PERCENT" | null; revenueValue: Amount; revenuePercent: Amount; products: Product[] };
 export type InterviewSnapshot = {
   initiationId: string;
   questionnaireType: string;
-  establishmentInfo: { ghanaPostGps: string | null; farmType: string | null; sector: string | null };
+  establishmentInfo: { ghanaPostGps: string | null; farmType: string | null; sector: string | null; gpsDistanceReason?: string | null };
   revenue: { currency: Coded; referencePeriod: string; annual: Amount; quarterly: { id: string; year: number; quarter: number; amount: Amount }[] };
   categories: Category[];
   gpsChecks: { id: string; capturedAt: string; accuracyM: number | null; distanceM: string | null; clientDistanceM: number | null }[];
@@ -79,6 +104,8 @@ export type SubmissionDetail = {
   isCurrent: boolean;
   canDecide: boolean;
   submissions: { submissionId: string; submissionNo: number; submittedByName: string; submittedAt: string }[];
+  // Names of the contract regions/districts the snapshot refers to by id.
+  places?: { regions: Record<string, string>; districts: Record<string, string> };
   reviewEvents: ReviewEvent[];
 };
 export type AuditChange = {
@@ -102,6 +129,8 @@ export async function ppiApi<T>(path: string, init?: { method?: "GET" | "POST"; 
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
   const data = await response.json().catch(() => null);
+  // Session over: back to sign-in rather than an error no refresh can fix.
+  if (response.status === 401 && typeof window !== "undefined") window.location.assign("/");
   if (!response.ok) {
     throw new PpiApiError(data?.error?.message || "The PPI service could not complete the request.", response.status, data?.error?.code, data?.error?.errors);
   }
@@ -109,10 +138,14 @@ export async function ppiApi<T>(path: string, init?: { method?: "GET" | "POST"; 
 }
 
 // Module-scoped cache keys: invalidating PPI never touches another module.
+// Dashboard keys carry the signed-in user (whose scope the server applies)
+// and every parameter of the request.
 export const ppiKeys = {
   queue: (params: string) => `ppi:queue:${params}`,
   submission: (submissionId: string) => `ppi:submission:${submissionId}`,
   audit: (initiationId: string, filter: string) => `ppi:audit:${initiationId}:${filter}`,
+  dashboard: (part: "overview" | "breakdown" | "activity" | "attention" | "initiation", userId: string, params: string) =>
+    `ppi:dashboard:${part}:${userId}:${params}`,
 };
 
 export const STAGE_LABEL: Record<string, string> = { SUPERVISOR: "Supervisor", RS: "Regional Statistician", HQ: "HQ" };
