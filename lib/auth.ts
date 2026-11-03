@@ -14,5 +14,8 @@ export type DashboardUser = {
   market_id: string | null;
   market_code: string | null;
   market_name: string | null;
+  // Statistics programmes (lib/programs.ts); sent by backends from 2026-11-03.
+  program?: "CPI" | "PPI";
+  programs?: ("CPI" | "PPI")[];
   last_login_at: string | null;
 };

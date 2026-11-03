@@ -5,6 +5,8 @@ import Image from "next/image";
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { clearDashboardUser } from "@/lib/dashboard-user-client";
+import { lastDashboardModule, setDashboardModule } from "@/lib/module-store";
+import { landingFor } from "@/lib/programs";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,8 +31,11 @@ export default function LoginPage() {
         return;
       }
       clearDashboardUser();
-      // Opens the module last chosen in the top bar; Market Reading by default.
-      router.replace(document.cookie.includes("prism_module=initiation") ? "/dashboard" : "/dashboard/market-reading");
+      // Users in both programmes choose a workspace; everyone else opens their
+      // programme (CPI: the module last chosen in the top bar).
+      const landing = landingFor(data.user, lastDashboardModule());
+      if (landing.module) setDashboardModule(landing.module);
+      router.replace(landing.path);
       router.refresh();
     } catch {
       setError("The authentication service is unavailable. Please try again.");

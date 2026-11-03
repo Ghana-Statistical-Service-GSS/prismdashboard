@@ -62,6 +62,9 @@ function subscribe(listener: () => void) {
 
 const snapshot = () => (current ??= readCookie());
 
+// The module last chosen (outside React, e.g. right after signing in).
+export const lastDashboardModule = snapshot;
+
 export function useDashboardModule() {
   return useSyncExternalStore(subscribe, snapshot, () => "reading" as DashboardModule);
 }

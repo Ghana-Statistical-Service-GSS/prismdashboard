@@ -3,7 +3,9 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import clsx from "clsx";
+import { loadDashboardUser } from "@/lib/dashboard-user-client";
 import { DashboardModule, MODULE_HOME, MODULE_LABEL, setDashboardModule, useDashboardModule } from "@/lib/module-store";
+import { MODULE_PROGRAM, programsOf, type Program } from "@/lib/programs";
 
 const OPTIONS: { module: DashboardModule; hint: string; dot: string }[] = [
   { module: "reading", hint: "Monthly price collection", dot: "bg-prism-teal" },
@@ -31,6 +33,15 @@ export function ModuleSelect() {
     };
   }, [open]);
 
+  // Only the modules of the user's programme(s); every module until the user is known.
+  const [programs, setPrograms] = useState<Program[] | null>(null);
+  useEffect(() => {
+    let active = true;
+    loadDashboardUser().then((user) => { if (active) setPrograms(programsOf(user)); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
+  const options = programs ? OPTIONS.filter((o) => programs.includes(MODULE_PROGRAM[o.module])) : OPTIONS;
+
   const choose = (next: DashboardModule) => {
     setOpen(false);
     setDashboardModule(next);
@@ -56,7 +67,7 @@ export function ModuleSelect() {
       </button>
       {open && (
         <ul role="listbox" aria-label="Module" className="absolute left-0 z-50 mt-2 w-72 rounded-2xl bg-white p-1.5 shadow-xl ring-1 ring-slate-100">
-          {OPTIONS.map((option) => (
+          {options.map((option) => (
             <li key={option.module}>
               <button
                 type="button"
