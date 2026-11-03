@@ -38,6 +38,15 @@ const referenceItems: NavItem[] = [
 
 // Each module shows only its own pages (chosen in the top bar).
 const navByModule: Record<DashboardModule, NavSection[]> = {
+  ppi: [
+    {
+      title: "PPI INITIATION",
+      items: [
+        { label: "Dashboard", href: "/ppi/dashboard" },
+        { label: "Review queue", href: "/ppi/review" },
+      ],
+    },
+  ],
   reading: [
     {
       title: "MARKET READING",

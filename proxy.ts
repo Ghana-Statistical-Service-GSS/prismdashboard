@@ -31,7 +31,8 @@ function isHqOnlyPath(pathname: string) {
 // Where the dashboard opens: the module chosen in the top bar (cookie set by
 // lib/module-store), Market Reading by default.
 function moduleHome(request: NextRequest) {
-  return request.cookies.get("prism_module")?.value === "initiation" ? "/dashboard" : "/dashboard/market-reading";
+  const chosen = request.cookies.get("prism_module")?.value;
+  return chosen === "initiation" ? "/dashboard" : chosen === "ppi" ? "/ppi/dashboard" : "/dashboard/market-reading";
 }
 
 // The role check before restricted pages asked the backend on every
@@ -50,7 +51,14 @@ async function roleFor(token: string) {
   return role;
 }
 
+// The firm's public web form (/f/<link>): no dashboard session, its own
+// access code and API (/api/firm, outside this matcher).
+function isPublicFirmPath(pathname: string) {
+  return pathname === "/f" || pathname.startsWith("/f/");
+}
+
 export async function proxy(request: NextRequest) {
+  if (isPublicFirmPath(request.nextUrl.pathname)) return NextResponse.next();
   const signedIn = Boolean(request.cookies.get(SESSION_COOKIE)?.value);
   const isLogin = request.nextUrl.pathname === "/";
 
