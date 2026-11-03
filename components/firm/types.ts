@@ -124,6 +124,9 @@ export type Doc = {
   establishmentId: string;
   establishmentVersion: number;
   general: Record<string, string>;
+  // As loaded from the server: only fields that differ are sent (an untouched
+  // preloaded value the server would refuse never blocks the firm's save).
+  generalSaved: Record<string, string>;
   initiationId: string;
   initiationVersion: number;
   info: { ghanaPostGps: string; farmType: string | null; sector: string | null };

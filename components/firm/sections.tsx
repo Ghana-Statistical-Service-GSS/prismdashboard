@@ -3,9 +3,9 @@
 // Steps 1, 2 and 4 of the firm's form: about the business (sections A and
 // B), revenue and major product categories, quarterly revenue. Wording
 // follows the questionnaires and the enumerator's app.
-import { useId } from "react";
+import { useId, useState } from "react";
 import { AmountField, Button, Card, CodedField, errorFor, inputClass, NumberField, otherErrors, RecordStatus, SelectField, TextField } from "./fields";
-import { key, money, newCategory, percentText, quarterAllowsNotAvailable, revenueSummary, uuid, type RevenueSummary } from "./model";
+import { incompleteEmail, key, money, newCategory, percentText, quarterAllowsNotAvailable, revenueSummary, uuid, type RevenueSummary } from "./model";
 import type { Amount, Category, FirmFormResponse, QuestionnaireType } from "./types";
 import type { useFirmForm } from "./useFirmForm";
 
@@ -49,7 +49,13 @@ export function GeneralStep({ f, form }: { f: Form; form: FirmFormResponse }) {
   const estErrors = f.errors.get(key.est);
   const initErrors = f.errors.get(key.init);
   const g = form.establishment.general;
+  // Email fields left with a half-typed address: a hint, not a server error
+  // (such an address is not sent until it is complete).
+  const [left, setLeft] = useState<Set<string>>(() => new Set());
   const setGeneral = (field: string, value: string) => f.update((d) => { d.general[field] = value; }, [key.est]);
+  const emailHint = (field: string) => (field.endsWith("Email") && left.has(field) && incompleteEmail(doc.general[field] ?? "")
+    ? "Enter the full email address, e.g. name@example.com. It is saved once complete."
+    : undefined);
   const setInfo = (field: "ghanaPostGps" | "farmType" | "sector", value: string | null) =>
     f.update((d) => { (d.info as Record<string, string | null>)[field] = field === "ghanaPostGps" ? value ?? "" : value; }, [key.init]);
   return (
@@ -65,8 +71,9 @@ export function GeneralStep({ f, form }: { f: Form; form: FirmFormResponse }) {
                 value={doc.general[field] ?? ""}
                 optional={OPTIONAL.has(field)}
                 multiline={field === "locationDescription"}
-                error={errorFor(estErrors?.errors, `fields.${field}`)}
+                error={emailHint(field) || errorFor(estErrors?.errors, `fields.${field}`)}
                 onChange={(v) => setGeneral(field, v)}
+                onBlur={field.endsWith("Email") ? () => setLeft((s) => new Set(s).add(field)) : undefined}
                 testId={`general-${field}`}
                 {...INPUT[field]}
               />
@@ -261,7 +268,8 @@ export function RevenueStep({ f, form }: { f: Form; form: FirmFormResponse }) {
           <p className="text-sm text-prism-muted">Number of {PRODUCT_PLURAL(qt)}: how many different {PRODUCT_PLURAL(qt)} you will report in each {qt === "CONSTRUCTION" ? "type" : "category"}.</p>
         </div>
 
-        <RevenueCheck summary={summary} symbol={symbol} basis={basis} year={year} hasCategories={doc.categories.length > 0} />
+        <RevenueCheck summary={summary} symbol={symbol} basis={basis} year={year} hasCategories={doc.categories.length > 0}
+          groupWord={qt === "CONSTRUCTION" ? "activity type" : "category"} groupsWord={qt === "CONSTRUCTION" ? "activity types" : "categories"} />
       </section>
     </div>
   );
@@ -301,8 +309,8 @@ function Calculated({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RevenueCheck({ summary, symbol, basis, year, hasCategories }: {
-  summary: RevenueSummary; symbol: string; basis: "VALUE" | "PERCENT"; year: string; hasCategories: boolean;
+function RevenueCheck({ summary, symbol, basis, year, hasCategories, groupWord, groupsWord }: {
+  summary: RevenueSummary; symbol: string; basis: "VALUE" | "PERCENT"; year: string; hasCategories: boolean; groupWord: string; groupsWord: string;
 }) {
   if (!hasCategories) return null;
   const { remainingCents: left, totalCents, missing } = summary;
@@ -313,18 +321,18 @@ function RevenueCheck({ summary, symbol, basis, year, hasCategories }: {
   if (totalCents === null || left === null) {
     tone = "warn";
     title = "Total revenue not entered";
-    body = `Enter the total revenue for ${year} above; the categories are checked against it.`;
+    body = `Enter the total revenue for ${year} above; the ${groupsWord} are checked against it.`;
   } else if (left < BigInt(0)) {
     tone = "bad";
-    title = "Categories add up to more than the annual revenue";
-    body = `${symbol} ${money(-left)} over the total of ${symbol} ${money(totalCents)}. Correct the categories or the total revenue above.`;
+    title = `${cap(groupsWord)} add up to more than the annual revenue`;
+    body = `${symbol} ${money(-left)} over the total of ${symbol} ${money(totalCents)}. Correct the ${groupsWord} or the total revenue above.`;
   } else if (left === BigInt(0) && !missing) {
     tone = "ok";
     title = "Revenue totals match";
     body = `${symbol} 0.00 remaining to allocate.`;
   } else {
     tone = "warn";
-    title = missing ? `Revenue missing for ${missing} ${missing === 1 ? "category" : "categories"}` : "Revenue not fully allocated";
+    title = missing ? `Revenue missing for ${missing} ${missing === 1 ? groupWord : groupsWord}` : "Revenue not fully allocated";
     body = `${symbol} ${money(left)}${percentLeft !== null && percentLeft > BigInt(0) ? ` (${percentText(percentLeft)})` : ""} remaining to allocate.`;
   }
   const styles = {

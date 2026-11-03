@@ -5,7 +5,7 @@
 // page of its own (spec.tsx). Agriculture's seasonality has its own step
 // (seasonality.tsx); a product added here gets its empty seasonality record.
 import { useEffect, useRef, useState } from "react";
-import { Button, Card, errorFor, NumberField, RecordStatus, TextField } from "./fields";
+import { Button, Card, errorFor, NumberField, otherErrors, RecordStatus, TextField } from "./fields";
 import { key, newProduct, newSeasonality, newSpec } from "./model";
 import { CATEGORY_NOUN, CATEGORY_PLURAL, PRODUCT_NOUN, PRODUCT_PLURAL, type Form } from "./sections";
 import { SpecPage, specProgress } from "./spec";
@@ -126,8 +126,10 @@ function ProductCard({ f, form, product: p, index, categoryName, onOpenSpec, onA
     <div id={`product-${p.id}`} className="scroll-mt-16">
       <Card title={`${cap(noun)} ${index + 1}${p.name ? `: ${p.name}` : ""}`} level={3}
         status={<RecordStatus pending={f.isPending(key.prod(p.id))} error={e?.message} />}
-        actions={<Button variant="ghost" onClick={removeProduct}>Remove</Button>}>
-        {e && !e.errors.length ? <p className="text-sm font-medium text-red-700" role="alert">{e.message}</p> : null}
+        actions={<Button variant="ghost" onClick={removeProduct} label={`Remove ${p.name || `${noun} ${index + 1}`}`}>Remove</Button>}>
+        {e && (!e.errors.length || otherErrors(e.errors, ["name", "revenuePercent"]).length) ? (
+          <p className="text-sm font-medium text-red-700" role="alert">{[e.message, ...otherErrors(e.errors, ["name", "revenuePercent"]).map((x) => x.message)].join(" ")}</p>
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label={`Name of the ${noun}`} value={p.name} hint={NAME_HINT[qt]} error={errorFor(e?.errors, "name")} testId={`product-${index}-name`}
             onChange={(v) => set((x) => { x.name = v; })} />

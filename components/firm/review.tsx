@@ -5,11 +5,11 @@
 // happens on sending and whom to ask; then the thank-you page, with a
 // read-only copy of what was sent (from this page's memory only: the link is
 // closed once the form is sent).
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { firmApi } from "./api";
 import { Button } from "./fields";
-import { monthRange } from "./model";
-import { currencySymbol, GENERAL_LABELS, PRODUCT_NOUN, type Form } from "./sections";
+import { monthLabel, monthRange } from "./model";
+import { currencySymbol, GENERAL_LABELS, PRODUCT_NOUN, PRODUCT_PLURAL, type Form } from "./sections";
 import type { Contact, Doc, FirmFormResponse, ReadinessIssue, ReadinessWarning } from "./types";
 
 export type SentCopy = { doc: Doc; form: FirmFormResponse };
@@ -21,6 +21,8 @@ const monthLong = (ym: string) => `${MONTHS_LONG[Number(ym.slice(5, 7)) - 1]} ${
 // ------------------------------------------------------------------ grouping
 
 type Icon = "business" | "revenue" | "product" | "season" | "quarter";
+// "2026-01" in the server's messages -> "January 2026".
+const readable = (text: string) => text.replace(/\b(\d{4})-(0[1-9]|1[0-2])\b/g, (m) => monthLabel(m));
 type Group = { key: string; title: string; icon: Icon; items: string[]; details: string[]; step: string; anchor?: string };
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
@@ -33,12 +35,14 @@ function productSummary(issues: ReadinessIssue[]) {
   const reasons = issues.filter((i) => i.id.includes("-reason-"));
   const follow = issues.some((i) => i.id.endsWith("-follow"));
   const noSpec = issues.some((i) => i.id.endsWith("-nospec"));
-  const other = issues.filter((i) => !history.includes(i) && !reasons.includes(i) && !i.id.endsWith("-follow") && !i.id.endsWith("-nospec"));
+  const currency = issues.filter((i) => i.id.endsWith("-currency"));
+  const other = issues.filter((i) => !history.includes(i) && !reasons.includes(i) && !currency.includes(i) && !i.id.endsWith("-follow") && !i.id.endsWith("-nospec"));
   if (noSpec) items.push("No pricing specification yet.");
   if (other.length) items.push("Some product and sales details are missing.");
+  if (currency.length) items.push("Prices were entered in another currency: confirm them on the specification page, or re-enter them.");
   if (history.length === 1) {
     const what = /missing for (.+)\.$/.exec(history[0].message)?.[1];
-    items.push(what ? `Prices are missing for ${what}.` : "Some monthly prices are missing.");
+    items.push(what ? `Prices are missing for ${readable(what)}.` : "Some monthly prices are missing.");
   } else if (history.length) {
     items.push(`Monthly prices are missing in ${history.length} price lists.`);
   }
@@ -50,7 +54,7 @@ function productSummary(issues: ReadinessIssue[]) {
 function groupsOf(doc: Doc, readiness: FirmFormResponse["readiness"]): Group[] {
   const all = Object.entries(readiness.issues).flatMap(([step, list]) => list.map((i) => ({ ...i, step })));
   const name = (id: string | undefined) => doc.products.find((p) => p.id === id)?.name.trim() || `Unnamed ${PRODUCT_NOUN(doc.qt)}`;
-  const messages = (list: typeof all) => list.map((i) => i.message);
+  const messages = (list: typeof all) => list.map((i) => readable(i.message));
   const isShare = (i: (typeof all)[number]) => i.id.endsWith("-shares") || i.id.endsWith("-share");
   const groups: Group[] = [];
   const push = (g: Omit<Group, "details"> & { details?: string[] }) => { if (g.items.length) groups.push({ details: [], ...g }); };
@@ -58,7 +62,7 @@ function groupsOf(doc: Doc, readiness: FirmFormResponse["readiness"]): Group[] {
   const business = all.filter((i) => i.step === "GENERAL" || i.step === "ESTABLISHMENT");
   push({ key: "business", title: "About your business", icon: "business", items: messages(business), step: "general" });
   const revenue = all.filter((i) => i.step === "CATEGORIES");
-  push({ key: "revenue", title: "Revenue & categories", icon: "revenue", items: messages(revenue), step: "revenue" });
+  push({ key: "revenue", title: doc.qt === "CONSTRUCTION" ? "Revenue & construction activities" : "Revenue & categories", icon: "revenue", items: messages(revenue), step: "revenue" });
   const shares = all.filter((i) => i.step === "PRODUCTS" && isShare(i));
   push({ key: "shares", title: "Revenue shares", icon: "revenue", items: messages(shares), step: "products" });
   const products = all.filter((i) => i.step === "PRODUCTS" && !i.target?.productId && !isShare(i));
@@ -68,7 +72,7 @@ function groupsOf(doc: Doc, readiness: FirmFormResponse["readiness"]): Group[] {
   ids.sort((a, b) => doc.products.findIndex((p) => p.id === a) - doc.products.findIndex((p) => p.id === b));
   for (const id of ids) {
     const own = all.filter((i) => i.target?.productId === id && i.step === "PRODUCTS" && !isShare(i));
-    push({ key: `prod-${id}`, title: `${name(id)}: product details & prices`, icon: "product", items: productSummary(own), details: messages(own), step: "products", anchor: `product-${id}` });
+    push({ key: `prod-${id}`, title: `${name(id)}: ${doc.qt === "CONSTRUCTION" ? "contract details & prices" : "product details & prices"}`, icon: "product", items: productSummary(own), details: messages(own), step: "products", anchor: `product-${id}` });
     const season = all.filter((i) => i.target?.productId === id && i.step === "SEASONALITY");
     const left = season.map((i) => Number(/(\d+) seasonality question/.exec(i.message)?.[1] || 0)).reduce((a, b) => a + b, 0);
     push({ key: `season-${id}`, title: `${name(id)}: seasonality`, icon: "season",
@@ -233,7 +237,7 @@ function GroupRow({ group: g, goTo }: { group: Group; goTo: GoTo }) {
           </div>
         ) : null}
       </div>
-      <Button variant="secondary" onClick={() => goTo(g.step, g.anchor)} className="shrink-0 self-start" testId={`review-go-${g.key}`}>Review <span aria-hidden="true">→</span></Button>
+      <Button variant="secondary" onClick={() => goTo(g.step, g.anchor)} className="shrink-0 self-start" testId={`review-go-${g.key}`} label={`Review ${g.title}`}>Review <span aria-hidden="true">→</span></Button>
     </li>
   );
 }
@@ -385,6 +389,8 @@ function ContactDetails({ contact: c }: { contact: Contact }) {
 
 export function ThankYou({ copy }: { copy?: SentCopy }) {
   const [showCopy, setShowCopy] = useState(false);
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => { heading.current?.focus(); }, []);
   return (
     <div className="space-y-5" data-testid="thank-you">
       <section className="space-y-4 rounded-2xl border border-teal-200 bg-teal-50/60 p-5 sm:p-7">
@@ -393,7 +399,7 @@ export function ThankYou({ copy }: { copy?: SentCopy }) {
             <svg viewBox="0 0 24 24" className="h-8 w-8" fill="none" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5" /></svg>
           </span>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-prism-text sm:text-3xl" tabIndex={-1}>Thank you for your contribution</h1>
+            <h1 ref={heading} className="text-2xl font-bold text-prism-text outline-none sm:text-3xl" tabIndex={-1}>Thank you for your contribution</h1>
             <p className="text-lg text-prism-muted">Your questionnaire has been sent to your GSS enumerator.</p>
             <span className="inline-block rounded-full bg-prism-purple/10 px-3 py-1 text-sm font-semibold text-prism-purple">Sent for review</span>
           </div>
@@ -451,7 +457,7 @@ function SentAnswers({ copy: { doc, form } }: { copy: SentCopy }) {
         <Rows rows={[["Currency", label("currency", doc.currency.code, doc.currency.otherText)], [`Total revenue for ${doc.referencePeriod}`, doc.annual ? `${symbol} ${doc.annual}` : "—"]]} />
         <ul className="list-disc space-y-1 pl-5 text-sm">
           {doc.categories.map((c) => (
-            <li key={c.id}>{c.name || "Unnamed"}: {c.revenueBasis === "PERCENT" ? `${c.revenuePercent || "—"}%` : `${symbol} ${c.revenueValue || "—"}`} · {c.productCount || "?"} {noun}(s)</li>
+            <li key={c.id}>{c.name || "Unnamed"}: {c.revenueBasis === "PERCENT" ? `${c.revenuePercent || "—"}%` : `${symbol} ${c.revenueValue || "—"}`} · {c.productCount || "?"} {Number(c.productCount) === 1 ? noun : PRODUCT_PLURAL(doc.qt)}</li>
           ))}
         </ul>
       </CopySection>

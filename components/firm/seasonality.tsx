@@ -4,7 +4,7 @@
 // production and sales, answered for each product recorded in the products
 // step. Products are added and removed there; each one gets its questions here.
 import { useState } from "react";
-import { Card, CheckboxField, CodedField, errorFor, MonthsField, RecordStatus, TextField, YesNo } from "./fields";
+import { Card, CheckboxField, CodedField, errorFor, MonthsField, otherErrors, RecordStatus, TextField, YesNo } from "./fields";
 import { key, newSeasonality, seasonalityLeft } from "./model";
 import { CATEGORY_NOUN, PRODUCT_NOUN, PRODUCT_PLURAL, type Form } from "./sections";
 import type { FirmFormResponse, Product } from "./types";
@@ -114,7 +114,9 @@ function SeasonalityFields({ f, form, productId }: { f: Form; form: FirmFormResp
   }, [k]);
   return (
     <div className="space-y-5">
-      {e && !e.errors.length ? <p className="text-sm font-medium text-red-700" role="alert">{e.message}</p> : null}
+      {e && (!e.errors.length || otherErrors(e.errors, ["producedAllYear", "mainBuyer", "seasonality.producedAllYear", "seasonality.mainBuyer"]).length) ? (
+        <p className="text-sm font-medium text-red-700" role="alert">{[e.message, ...otherErrors(e.errors, ["producedAllYear", "mainBuyer", "seasonality.producedAllYear", "seasonality.mainBuyer"]).map((x) => x.message)].join(" ")}</p>
+      ) : null}
       <YesNo label="1. Is the product produced throughout the year?" value={s.producedAllYear} onChange={(v) => set((x) => { x.producedAllYear = v; })} error={errorFor(e?.errors, "producedAllYear")} />
       {s.producedAllYear === false ? <MonthsField label="2. If no, which months is it normally available?" value={s.availableMonths} onChange={(v) => set((x) => { x.availableMonths = v; })} /> : null}
       <MonthsField label="3. Which months have the highest production?" value={s.highProductionMonths} onChange={(v) => set((x) => { x.highProductionMonths = v; })} />

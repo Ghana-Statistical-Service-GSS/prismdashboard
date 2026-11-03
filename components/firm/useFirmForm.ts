@@ -33,7 +33,7 @@ type Entry = {
   status: "waiting" | "sending" | "retry" | "error";
 };
 
-export type RecordError = { message: string; errors: FieldError[] };
+export type RecordError = { message: string; errors: FieldError[]; code?: string };
 export type SaveState = { kind: "idle" | "saving" | "saved" | "retrying" | "error"; unsaved: number; errorCount: number };
 
 const CONFLICT_CODES = new Set(["VERSION_CONFLICT", "RECORD_EXISTS", "RECORD_GONE", "RECORD_DELETED", "DUPLICATE_OBSERVATION"]);
@@ -240,10 +240,11 @@ export function useFirmForm({ slug, csrf, form, onClosed, onSessionLost }: {
       return;
     }
     if (!answer.data) { retryLater(); return; }
-    failures.current = 0;
     const next = structuredClone(docRef.current);
     const newErrors = new Map(errorsRef.current);
     let closedReason: string | null | undefined;
+    let serverErrors = 0;
+    let parentSaved = false;
     answer.data.results.forEach((result, index) => {
       const e = sent[index];
       if (!e) return;
@@ -258,22 +259,37 @@ export function useFirmForm({ slug, csrf, form, onClosed, onSessionLost }: {
       }
       if (result.status === "APPLIED") {
         if (!isDelete) withVersion(next, e.key, result.version);
+        // What the server now holds: later saves send only fields changed again.
+        if (e.op?.type === "ESTABLISHMENT_CORRECT") {
+          for (const [f, v] of Object.entries((e.op.payload.fields ?? {}) as Record<string, string | null>)) next.generalSaved[f] = v ?? "";
+        }
+        if (!isDelete && /^(CAT|PROD|SPEC):/.test(e.key)) parentSaved = true;
         newErrors.delete(e.key);
         if (e.dirty) { e.op = null; e.dirty = false; e.status = "waiting"; } else entries.current.delete(e.key);
         setEverSaved(true);
         return;
       }
       if (result.code === "INVITE_CLOSED") { closedReason = result.closedReason ?? null; return; }
-      if (result.status === "ERROR") { e.status = "retry"; return; }
+      if (result.status === "ERROR") { e.status = "retry"; serverErrors += 1; return; }
       if (result.status === "CONFLICT" && CONFLICT_CODES.has(result.code || "")) {
         entries.current.delete(e.key);
         conflicts.current.push(conflictLabel(e.key));
         return;
       }
       // Refused: shown at the record; the next edit sends it again.
-      newErrors.set(e.key, { message: result.message || "This answer could not be saved.", errors: result.errors || [] });
+      newErrors.set(e.key, { message: result.message || "This answer could not be saved.", errors: result.errors || [], code: result.code });
       if (e.dirty) { e.op = null; e.dirty = false; e.status = "waiting"; } else { e.op = null; e.status = "error"; }
     });
+    // Records refused only because their category, product or specification
+    // was not on the server yet go again once one of those has saved.
+    if (parentSaved) {
+      for (const entry of entries.current.values()) {
+        if (entry.status === "error" && newErrors.get(entry.key)?.code === "PARENT_MISSING") {
+          entry.status = "waiting";
+          newErrors.delete(entry.key);
+        }
+      }
+    }
     commitDoc(next);
     setErrors(newErrors);
     sending.current = false;
@@ -283,7 +299,15 @@ export function useFirmForm({ slug, csrf, form, onClosed, onSessionLost }: {
       return;
     }
     rerender();
-    schedule(0);
+    // A server error on some answers: retried with the same growing pause as
+    // a lost connection (not at once, which would only repeat it).
+    if (serverErrors) {
+      failures.current += 1;
+      schedule(Math.min(30_000, 1000 * 2 ** Math.min(failures.current, 5)));
+    } else {
+      failures.current = 0;
+      schedule(0);
+    }
   }, [reload, schedule, slug]);
 
   useEffect(() => { flushRef.current = flush; }, [flush]);

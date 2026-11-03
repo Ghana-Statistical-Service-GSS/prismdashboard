@@ -97,6 +97,7 @@ export function fromServer(form: FirmFormResponse): Doc {
     establishmentId: form.establishment.establishmentId,
     establishmentVersion: form.establishment.version,
     general: Object.fromEntries(Object.entries(form.establishment.general).map(([k, v]) => [k, blank(v)])),
+    generalSaved: Object.fromEntries(Object.entries(form.establishment.general).map(([k, v]) => [k, blank(v)])),
     initiationId: i.initiationId,
     initiationVersion: i.version,
     info: { ghanaPostGps: blank(i.establishmentInfo.ghanaPostGps), farmType: i.establishmentInfo.farmType, sector: i.establishmentInfo.sector },
@@ -199,6 +200,10 @@ function termsPayload(qt: QuestionnaireType, t: Spec["terms"]) {
   }
 }
 
+// The server's email rule (backend ppi/services/editing.service.js EMAIL_RE).
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+export const incompleteEmail = (value: string) => value.trim() !== "" && !EMAIL_RE.test(value.trim());
+
 // The operation that saves record `k` as it is now (null: nothing to send).
 // `tombstones`: versions of records deleted here, for their DELETE.
 export function buildOp(doc: Doc, k: string, operationId: string, editable: string[], tombstones: Map<string, number | null>): Operation | null {
@@ -210,7 +215,14 @@ export function buildOp(doc: Doc, k: string, operationId: string, editable: stri
     return base("INITIATION_UPDATE", doc.initiationId, doc.initiationVersion, { establishmentInfo: info, revenue: { currency: doc.currency, annual: amountOf(doc.annual) } });
   }
   if (k === key.est) {
-    const fields = Object.fromEntries(editable.map((f) => [f, textOrNull(doc.general[f] ?? "")]));
+    // An email still being typed ("name@mail") is not sent: the server would
+    // refuse the whole record; it goes once it is a full address (or empty).
+    // Only fields that differ from what the server holds (as the phone does).
+    const fields = Object.fromEntries(editable
+      .filter((f) => (doc.general[f] ?? "").trim() !== (doc.generalSaved[f] ?? "").trim())
+      .filter((f) => !(f.endsWith("Email") && incompleteEmail(doc.general[f] ?? "")))
+      .map((f) => [f, textOrNull(doc.general[f] ?? "")]));
+    if (!Object.keys(fields).length) return null;
     return base("ESTABLISHMENT_CORRECT", doc.establishmentId, doc.establishmentVersion, { fields });
   }
   if (k.startsWith("DEL-")) {
