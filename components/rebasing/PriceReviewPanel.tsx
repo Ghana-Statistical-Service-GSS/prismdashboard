@@ -113,6 +113,8 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState<10 | 20>(20);
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  // Prices the reader corrected after a rejection and sent back for review.
+  const [correctedOnly, setCorrectedOnly] = useState(false);
   const [view, setView] = useState<"queue" | "all">("queue");
   const [search, setSearch] = useState("");
   // Who decided what: prices a stage approved or rejected at any point.
@@ -132,6 +134,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
 
   const params = new URLSearchParams({ periodId, page: String(page), pageSize: String(pageSize) });
   if (flaggedOnly) params.set("flagged", "true");
+  if (correctedOnly) params.set("corrected", "true");
   if (view === "all") params.set("view", "all");
   if (search.trim()) params.set("search", search.trim());
   // "status:PENDING_SUPERVISOR" = waiting there now; "SUPERVISOR:APPROVED" = decided at some point.
@@ -246,6 +249,10 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           <label className="flex cursor-pointer items-center gap-2 rounded-full bg-prism-bg px-3 py-1.5 text-xs font-bold text-prism-text">
             <input type="checkbox" checked={flaggedOnly} onChange={(event) => { setFlaggedOnly(event.target.checked); setPage(1); }} className="accent-prism-purple" />
             Flagged only
+          </label>
+          <label className="flex cursor-pointer items-center gap-2 rounded-full bg-prism-bg px-3 py-1.5 text-xs font-bold text-prism-text">
+            <input type="checkbox" checked={correctedOnly} onChange={(event) => { setCorrectedOnly(event.target.checked); setPage(1); setSelected(new Set()); }} className="accent-prism-purple" />
+            Corrected after rejection
           </label>
         </div>
       </div>
@@ -400,7 +407,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           </article>
         ))}
         {!loading && quotes.length === 0 && !error && (
-          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : decidedBy ? `No prices ${FILTER_GROUPS.flatMap((g) => g.options).find(([v]) => v === decidedBy)?.[1].toLowerCase()}` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}{narrowed ? " for the chosen filters" : ""}.</p>
+          <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : decidedBy ? `No prices ${FILTER_GROUPS.flatMap((g) => g.options).find(([v]) => v === decidedBy)?.[1].toLowerCase()}` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}{correctedOnly ? " among corrected prices" : ""}{narrowed ? " for the chosen filters" : ""}.</p>
         )}
       </div>
 
