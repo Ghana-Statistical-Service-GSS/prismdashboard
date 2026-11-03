@@ -44,6 +44,8 @@ const navByModule: Record<DashboardModule, NavSection[]> = {
       items: [
         { label: "Dashboard", href: "/ppi/dashboard" },
         { label: "Review queue", href: "/ppi/review" },
+        // HQ, Admin and Regional Statisticians (the backend refuses Supervisors).
+        { label: "Data export", href: "/ppi/export", hiddenForSupervisor: true },
       ],
     },
   ],
