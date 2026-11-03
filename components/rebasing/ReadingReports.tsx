@@ -9,6 +9,7 @@ import { TablePagination } from "@/components/common/TablePagination";
 import { TableSearch } from "@/components/common/TableSearch";
 import { useTableControls } from "@/components/common/useTableControls";
 import { MetricRow, Period, ReaderMetricRow, formatDay, number, percent, periodLabel } from "./api";
+import { PriceExport } from "./PriceExport";
 import { useRebasingQuery } from "./useRebasingQuery";
 
 // Market Reading › Reports. Summaries for the month at the caller's scope
@@ -81,7 +82,7 @@ export function ReadingReports() {
         <div>
           <p className="text-xs font-bold uppercase tracking-[0.2em] text-prism-teal">Market Reading</p>
           <h1 className="mt-2 text-2xl font-black tracking-tight text-prism-text sm:text-3xl">Reports</h1>
-          <p className="mt-2 max-w-2xl text-sm text-prism-muted">{`Collection, review and data completeness for ${scopeText}. Every table can be downloaded as CSV.`}</p>
+          <p className="mt-2 max-w-2xl text-sm text-prism-muted">{`Collection, review and data completeness for ${scopeText}. Every table can be downloaded as CSV, and the month's prices exported below.`}</p>
         </div>
         {list.length > 0 && (
           <label className="flex items-center gap-2 rounded-full bg-white px-4 py-2 text-xs font-bold text-prism-text shadow-sm">
@@ -115,6 +116,8 @@ export function ReadingReports() {
           )}
         </section>
       )}
+
+      {list.length > 0 && <PriceExport periods={list} defaultPeriodId={selectedId} user={user} />}
 
       {summary.data && (
         <div className="mt-6 grid gap-6 xl:grid-cols-2">
