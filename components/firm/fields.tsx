@@ -193,9 +193,9 @@ export function Card({ title, children, status, actions, level = 3 }: { title: s
   );
 }
 
-export function Button({ children, onClick, variant = "primary", type = "button", disabled, testId, className = "" }: {
+export function Button({ children, onClick, variant = "primary", type = "button", disabled, testId, className = "", label }: {
   children: React.ReactNode; onClick?: () => void; variant?: "primary" | "secondary" | "danger" | "ghost"; type?: "button" | "submit";
-  disabled?: boolean; testId?: string; className?: string;
+  disabled?: boolean; testId?: string; className?: string; label?: string;
 }) {
   const styles = {
     primary: "bg-prism-purple text-white hover:bg-prism-purple-dark",
@@ -204,7 +204,7 @@ export function Button({ children, onClick, variant = "primary", type = "button"
     ghost: "text-prism-purple underline-offset-2 hover:underline",
   }[variant];
   return (
-    <button type={type} onClick={onClick} disabled={disabled} data-testid={testId}
+    <button type={type} onClick={onClick} disabled={disabled} data-testid={testId} aria-label={label}
       className={`inline-flex min-h-11 items-center justify-center gap-2 rounded-xl px-4 text-base font-semibold focus:outline-none focus-visible:ring-2 focus-visible:ring-prism-purple/50 disabled:cursor-not-allowed disabled:opacity-50 ${styles} ${className}`}>
       {children}
     </button>

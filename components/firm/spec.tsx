@@ -5,7 +5,7 @@
 // contract specifications), 3.. prices per series (current price and the
 // monthly table, with the change from the previous recorded month and the
 // explanations the server asks for), and the product's follow-up questions.
-import { useId } from "react";
+import { useId, useState } from "react";
 import { Button, errorFor, inputClass, otherErrors } from "./fields";
 import { cleanNumber, flaggedPrices, key, monthRange, uuid } from "./model";
 import { currencySymbol, PRODUCT_NOUN, type Form } from "./sections";
@@ -103,6 +103,17 @@ export function SpecPage({ f, form, spec: s, product, index, onBack, onContinue,
     onRemoved();
   };
   const unitText = unitShort(s.unit, opts.unit);
+  // Prices recorded in another currency than this specification's now (the
+  // server asks to re-enter them): the firm can confirm the amounts as they
+  // are, which saves them again in the current currency.
+  const stale = f.serverForm.readiness.issues.PRODUCTS?.find((i) => i.id === `s-${s.id}-currency`);
+  const [confirmed, setConfirmed] = useState(false);
+  const currentSymbol = s.priceCurrency?.code ? currencySymbol(s.priceCurrency.code, s.priceCurrency.otherText) : currencySymbol(doc.currency.code, doc.currency.otherText);
+  const confirmCurrency = () => {
+    const keys = doc.prices.filter((x) => x.specId === s.id && x.amount.state === "REPORTED").map((x) => key.price(x.id));
+    f.update(() => {}, keys);
+    setConfirmed(true);
+  };
   const revenueCurrency = doc.currency;
   const districts = (form.reference?.districts || []).filter((d) => d.regionId === t.contractRegionId);
   const series = form.config.priceSeries;
@@ -131,6 +142,14 @@ export function SpecPage({ f, form, spec: s, product, index, onBack, onContinue,
         <p className="rounded-xl bg-red-50 p-3 text-sm font-medium text-red-800" role="alert">
           {[e.message, ...otherErrors(e.errors, SPEC_FIELDS).map((x) => x.message)].join(" ")}
         </p>
+      ) : null}
+
+      {stale && !confirmed ? (
+        <div className="space-y-3 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status" data-testid="spec-currency-stale">
+          <p>{stale.message}</p>
+          <p>If the amounts below are already in {currentSymbol}, confirm them. Otherwise correct each price.</p>
+          <Button variant="secondary" onClick={confirmCurrency} testId="spec-currency-confirm">The amounts are in {currentSymbol}: keep them</Button>
+        </div>
       ) : null}
 
       <Section n={1} title={`${cap(noun)} details`}>

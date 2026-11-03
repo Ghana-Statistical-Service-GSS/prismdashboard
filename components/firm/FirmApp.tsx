@@ -376,7 +376,7 @@ function SaveBar({ state }: { state: ReturnType<typeof useFirmForm>["state"] }) 
     idle: "Your answers are saved as you type.",
     saving: "Saving…",
     saved: "All changes saved.",
-    retrying: "Not saved yet: no connection to the server. We keep trying; please keep this page open.",
+    retrying: "Not saved yet: the connection or the server is not answering. We keep trying; please keep this page open.",
     error: `${state.errorCount} answer${state.errorCount === 1 ? "" : "s"} could not be saved. See the messages in red.`,
   }[state.kind];
   const tone = {
