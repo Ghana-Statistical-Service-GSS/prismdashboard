@@ -132,7 +132,7 @@ export class PpiApiError extends Error {
   }
 }
 
-export async function ppiApi<T>(path: string, init?: { method?: "GET" | "POST"; body?: unknown; signal?: AbortSignal }): Promise<T> {
+export async function ppiApi<T>(path: string, init?: { method?: "GET" | "POST" | "PATCH"; body?: unknown; signal?: AbortSignal }): Promise<T> {
   const response = await fetch(`/api/dashboard/ppi${path}`, {
     method: init?.method || "GET",
     cache: "no-store",
@@ -159,6 +159,8 @@ export const ppiKeys = {
   exportOptions: (userId: string) => `ppi:export-options:${userId}`,
   dashboard: (part: "overview" | "breakdown" | "activity" | "attention" | "initiation", userId: string, params: string) =>
     `ppi:dashboard:${part}:${userId}:${params}`,
+  users: (params: string) => `ppi:users:${params}`,
+  places: () => "ppi:places",
 };
 
 export const STAGE_LABEL: Record<string, string> = { SUPERVISOR: "Supervisor", RS: "Regional Statistician", HQ: "HQ" };

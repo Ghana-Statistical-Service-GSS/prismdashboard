@@ -33,7 +33,7 @@ export default function MarketReadingDevicesPage() {
           <header>
             <p className="text-xs font-bold uppercase tracking-[0.2em] text-prism-teal">Market Reading</p>
             <h1 className="mt-2 text-3xl font-black tracking-tight text-prism-text md:text-4xl">Device Bindings</h1>
-            <p className="mt-2 max-w-3xl text-sm text-prism-muted">Each Market Reader account works on one phone. When a reader changes or reinstalls a phone, allow the new device here.</p>
+            <p className="mt-2 max-w-3xl text-sm text-prism-muted">Each Market Reader account works on one phone. When a reader changes or reinstalls a phone, allow the new device here. CPI readers only: PPI enumerators are under PPI Initiation › Device bindings.</p>
           </header>
           {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-700">{error}</div>}
           {!data && !error && <div className="mt-8 rounded-3xl bg-white p-12 text-center text-sm text-prism-muted">Loading…</div>}

@@ -48,6 +48,14 @@ const navByModule: Record<DashboardModule, NavSection[]> = {
         { label: "Data export", href: "/ppi/export", hiddenForSupervisor: true },
       ],
     },
+    {
+      title: "PPI ACCOUNTS",
+      hqOnly: true,
+      items: [
+        { label: "Users", href: "/ppi/users", hiddenForScopedRole: true },
+        { label: "Device bindings", href: "/ppi/devices", hiddenForScopedRole: true },
+      ],
+    },
   ],
   reading: [
     {

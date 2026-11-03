@@ -19,6 +19,8 @@ const HQ_ONLY_PATHS = [
   "/outlets",
   "/items",
   "/staff",
+  "/ppi/users",
+  "/ppi/devices",
 ];
 
 function isScopedRoleRestrictedPath(pathname: string) {
@@ -26,6 +28,12 @@ function isScopedRoleRestrictedPath(pathname: string) {
 }
 function isHqOnlyPath(pathname: string) {
   return HQ_ONLY_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+}
+
+// Where a refused page sends the user: the PPI dashboard for a PPI page,
+// otherwise the Market Initiation dashboard (as before).
+function deniedHome(pathname: string) {
+  return pathname === "/ppi" || pathname.startsWith("/ppi/") ? "/ppi/dashboard" : "/dashboard";
 }
 
 // Where the dashboard opens: the module chosen in the top bar (cookie set by
@@ -76,10 +84,10 @@ export async function proxy(request: NextRequest) {
       const denied = (isScopedRoleRestrictedPath(request.nextUrl.pathname) && (role === "REGIONAL_STATISTICIAN" || role === "SUPERVISOR"))
         || (isHqOnlyPath(request.nextUrl.pathname) && role !== "HQ" && role !== "ADMIN");
       if (denied) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
+        return NextResponse.redirect(new URL(deniedHome(request.nextUrl.pathname), request.url));
       }
     } catch {
-      return NextResponse.redirect(new URL("/dashboard", request.url));
+      return NextResponse.redirect(new URL(deniedHome(request.nextUrl.pathname), request.url));
     }
   }
   return NextResponse.next();
