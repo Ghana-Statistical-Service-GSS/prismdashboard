@@ -46,6 +46,14 @@ const navByModule: Record<DashboardModule, NavSection[]> = {
         { label: "Review queue", href: "/ppi/review" },
       ],
     },
+    {
+      title: "PPI ACCOUNTS",
+      hqOnly: true,
+      items: [
+        { label: "Users", href: "/ppi/users", hiddenForScopedRole: true },
+        { label: "Device bindings", href: "/ppi/devices", hiddenForScopedRole: true },
+      ],
+    },
   ],
   reading: [
     {

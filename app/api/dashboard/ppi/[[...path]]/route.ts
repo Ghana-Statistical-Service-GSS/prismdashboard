@@ -49,3 +49,4 @@ async function forward(request: Request, context: { params: Promise<{ path?: str
 
 export const GET = forward;
 export const POST = forward;
+export const PATCH = forward;
