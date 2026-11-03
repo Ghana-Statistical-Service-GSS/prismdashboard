@@ -6,7 +6,12 @@ import { ppiDashboardBackendRequest } from "@/lib/backend";
 // Pass-through to /api/v1/ppi/dashboard/*. The backend owns every role,
 // scope and workflow rule; its JSON (including error.code and field errors)
 // is returned unchanged so the review screens can show the real reason, and
-// its CSV exports are returned as downloads.
+// its exports (CSV, and the .xlsx interview data) are returned as downloads,
+// byte for byte.
+const DOWNLOAD_TYPES = ["text/csv", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"];
+// The interview data export reads every submitted interview in scope; it may
+// take longer than a screen's request.
+const DATA_EXPORT_TIMEOUT_MS = 180_000;
 async function forward(request: Request, context: { params: Promise<{ path?: string[] }> }) {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
   if (!token) return NextResponse.json({ error: { message: "Not signed in" } }, { status: 401 });
@@ -22,11 +27,11 @@ async function forward(request: Request, context: { params: Promise<{ path?: str
       method: request.method,
       headers: { Authorization: `Bearer ${token}`, ...(body ? { "Content-Type": "application/json" } : {}) },
       body: body || undefined,
-      timeoutMs: 30_000,
+      timeoutMs: suffix === "/data-export" ? DATA_EXPORT_TIMEOUT_MS : 30_000,
     });
-    // CSV exports pass through as files; everything else is JSON.
+    // Exports pass through as files (binary-safe); everything else is JSON.
     const type = response.headers.get("content-type") || "";
-    if (response.ok && type.startsWith("text/csv")) {
+    if (response.ok && DOWNLOAD_TYPES.some((download) => type.startsWith(download))) {
       return new NextResponse(await response.arrayBuffer(), {
         status: response.status,
         headers: {

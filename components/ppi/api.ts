@@ -156,6 +156,7 @@ export const ppiKeys = {
   queue: (params: string) => `ppi:queue:${params}`,
   submission: (submissionId: string) => `ppi:submission:${submissionId}`,
   audit: (initiationId: string, filter: string) => `ppi:audit:${initiationId}:${filter}`,
+  exportOptions: (userId: string) => `ppi:export-options:${userId}`,
   dashboard: (part: "overview" | "breakdown" | "activity" | "attention" | "initiation", userId: string, params: string) =>
     `ppi:dashboard:${part}:${userId}:${params}`,
 };
