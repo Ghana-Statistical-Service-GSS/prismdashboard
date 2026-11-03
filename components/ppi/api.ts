@@ -25,6 +25,9 @@ export type QueueItem = {
   submittedAt: string | null;
   roundLabel: string;
   canDecide: boolean;
+  // The stage the reviewer's decision is recorded at: ahead of reviewStage
+  // when they decide before an earlier stage (RS before the Supervisor, HQ at any).
+  decidesAt?: "SUPERVISOR" | "RS" | "HQ" | null;
 };
 
 // `reason`: the enumerator's explanation where a price check asked for one
@@ -97,6 +100,8 @@ export type ReviewIssue = { entityType: string; recordId: string; field: string 
 export type ReviewEvent = {
   reviewEventId: string; submissionId: string; submissionNo: number; stage: string; decision: "APPROVED" | "RETURNED";
   reason: string | null; comment: string | null; issues: ReviewIssue[]; reviewerName: string; reviewedAt: string;
+  // "SUBMITTED:<stage>": where the case waited when it was decided.
+  statusBefore?: string;
 };
 export type SubmissionDetail = {
   submission: {
@@ -106,6 +111,7 @@ export type SubmissionDetail = {
   initiation: { initiationId: string; workflowStatus: string; reviewStage: string | null; version: number; submissionNo: number; currentSubmissionId: string | null };
   isCurrent: boolean;
   canDecide: boolean;
+  decidesAt?: "SUPERVISOR" | "RS" | "HQ" | null;
   submissions: { submissionId: string; submissionNo: number; submittedByName: string; submittedAt: string }[];
   // Names of the contract regions/districts the snapshot refers to by id.
   places?: { regions: Record<string, string>; districts: Record<string, string> };

@@ -21,6 +21,14 @@ const SERIES_LABEL: Record<string, string> = { SELLING: "Selling price", PURCHAS
 
 type Draft = ReviewIssue & { label: string };
 
+// The stage a decision was taken ahead of (an RS before the Supervisor, HQ
+// before either), from where the case waited ("SUBMITTED:SUPERVISOR"); null
+// when it was decided at its own stage.
+const aheadOf = (stage: string, statusBefore?: string) => {
+  const waited = statusBefore?.startsWith("SUBMITTED:") ? statusBefore.slice("SUBMITTED:".length) : null;
+  return waited && waited !== stage ? waited : null;
+};
+
 export function SubmissionReview({ submissionId }: { submissionId: string }) {
   const detail = usePpiQuery<SubmissionDetail>(ppiKeys.submission(submissionId), `/submissions/${submissionId}`);
   const [issues, setIssues] = useState<Draft[]>([]);
@@ -211,7 +219,10 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           <ol className="space-y-3">
             {d.reviewEvents.map((e) => (
               <li key={e.reviewEventId} className="rounded-2xl bg-prism-bg/70 p-3 text-sm">
-                <p className="font-bold">{e.decision === "APPROVED" ? "Approved" : "Returned"} at {STAGE_LABEL[e.stage]} review · submission {e.submissionNo}</p>
+                <p className="font-bold">
+                  {e.decision === "APPROVED" ? "Approved" : "Returned"} at {STAGE_LABEL[e.stage]} review
+                  {aheadOf(e.stage, e.statusBefore) ? ` (ahead of the ${STAGE_LABEL[aheadOf(e.stage, e.statusBefore)!]} review)` : ""} · submission {e.submissionNo}
+                </p>
                 <p className="text-xs text-prism-muted">{e.reviewerName}, {formatDateTime(e.reviewedAt)}</p>
                 {e.reason ? <p className="mt-1 whitespace-pre-line">{e.reason}</p> : null}
                 {e.comment ? <p className="mt-1 whitespace-pre-line text-prism-muted">{e.comment}</p> : null}
@@ -235,7 +246,14 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
       {d.canDecide ? (
         <div className="fixed inset-x-0 bottom-0 z-40 border-t border-prism-border/70 bg-white/95 px-4 py-3 backdrop-blur lg:left-64">
           <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
-            <p className="text-xs text-prism-muted">{issues.length ? `${issues.length} comment${issues.length === 1 ? "" : "s"} for the enumerator` : "Add comments on any record to return it with them."}</p>
+            <div className="text-xs text-prism-muted">
+              {d.decidesAt && d.initiation.reviewStage && d.decidesAt !== d.initiation.reviewStage ? (
+                <p className="mb-1 font-semibold text-amber-800" role="note">
+                  Waiting for the {STAGE_LABEL[d.initiation.reviewStage]} review: your decision is recorded as the {STAGE_LABEL[d.decidesAt]}&apos;s, ahead of it.
+                </p>
+              ) : null}
+              <p>{issues.length ? `${issues.length} comment${issues.length === 1 ? "" : "s"} for the enumerator` : "Add comments on any record to return it with them."}</p>
+            </div>
             <div className="flex gap-2">
               <button onClick={() => setDialog("RETURNED")} className="rounded-full bg-rose-600 px-4 py-2 text-sm font-bold text-white hover:bg-rose-700">Return for correction</button>
               <button onClick={() => setDialog("APPROVED")} disabled={issues.length > 0} title={issues.length ? "Remove the comments or return the submission" : undefined} className="rounded-full bg-teal-700 px-4 py-2 text-sm font-bold text-white hover:bg-teal-800 disabled:opacity-40">Approve</button>
