@@ -176,7 +176,10 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
             {interview.categories.map((c) => (
               <tr key={c.id} className="border-t border-prism-border/50">
                 <td className="py-2 font-bold">{c.name}</td>
-                <td className="font-mono text-xs">{c.cpcCode ?? "—"}</td>
+                <td className="max-w-xs py-2 pr-3 text-xs">
+                  <span className="font-mono font-bold">{c.cpcCode ?? "—"}</span>
+                  {c.cpcCode && cpcText(d.cpc, c.cpcCode) ? <span className="block text-prism-muted">{cpcText(d.cpc, c.cpcCode)}</span> : null}
+                </td>
                 <td>{c.revenueBasis === "PERCENT" ? `${amountText(c.revenuePercent)} %` : amountText(c.revenueValue)}</td>
                 <td>{c.products.length} of {c.productCount ?? "?"}</td>
                 <td className="text-right">{comment("CATEGORY", c.id, c.name)}</td>
@@ -201,7 +204,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
       ) : null}
 
       {interview.categories.map((c) => c.products.map((p) => (
-        <Section key={p.id} title={`${c.name} › ${p.name}`} note={`CPC ${p.cpcCode ?? "—"}`} actions={comment("PRODUCT", p.id, p.name)}>
+        <Section key={p.id} title={`${c.name} › ${p.name}`} note={`CPC ${[p.cpcCode ?? "—", p.cpcCode ? cpcText(d.cpc, p.cpcCode) : null].filter(Boolean).join(" · ")}`} actions={comment("PRODUCT", p.id, p.name)}>
           {p.seasonality ? (
             <p className="mb-3 text-xs text-prism-muted">
               Seasonality: {p.seasonality.producedAllYear ? "produced all year" : `available ${p.seasonality.availableMonths.map((m) => MONTHS[m - 1]).join(", ")}`};
@@ -335,6 +338,13 @@ function SpecificationView({ spec, n, snap, places, comment }: {
       </div>
     </div>
   );
+}
+
+// The official CPC description of a code (from the server's CPC list);
+// nothing from a server that does not send descriptions.
+function cpcText(cpc: Record<string, string> | undefined, code: string) {
+  if (!cpc) return null;
+  return cpc[code] ?? "not in the CPC list";
 }
 
 function Section({ title, note, actions, children }: { title: string; note?: string; actions?: ReactNode; children: ReactNode }) {

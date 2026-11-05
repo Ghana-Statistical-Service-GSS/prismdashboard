@@ -115,6 +115,8 @@ export type SubmissionDetail = {
   submissions: { submissionId: string; submissionNo: number; submittedByName: string; submittedAt: string }[];
   // Names of the contract regions/districts the snapshot refers to by id.
   places?: { regions: Record<string, string>; districts: Record<string, string> };
+  // CPC descriptions of the codes in the snapshot, by code.
+  cpc?: Record<string, string>;
   reviewEvents: ReviewEvent[];
 };
 export type AuditChange = {
