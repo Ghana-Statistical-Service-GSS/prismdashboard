@@ -117,6 +117,11 @@ export type SubmissionDetail = {
   places?: { regions: Record<string, string>; districts: Record<string, string> };
   // CPC descriptions of the codes in the snapshot, by code.
   cpc?: Record<string, string>;
+  // The review screen's pages and those this reviewer marked reviewed for
+  // this submission; absent from a server without the review checklist.
+  reviewProgress?: { pages: string[]; reviewed: string[] };
+  // The round's review chain (e.g. SUPERVISOR, RS, HQ).
+  reviewStages?: string[];
   reviewEvents: ReviewEvent[];
 };
 export type AuditChange = {
