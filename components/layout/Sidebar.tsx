@@ -17,6 +17,8 @@ type NavItem = {
   href?: string;
   hiddenForScopedRole?: boolean;
   hiddenForSupervisor?: boolean;
+  // Administrators only (not HQ).
+  adminOnly?: boolean;
 };
 
 type NavSection = {
@@ -52,8 +54,8 @@ const navByModule: Record<DashboardModule, NavSection[]> = {
       title: "PPI ACCOUNTS",
       hqOnly: true,
       items: [
-        { label: "Users", href: "/ppi/users", hiddenForScopedRole: true },
-        { label: "Device bindings", href: "/ppi/devices", hiddenForScopedRole: true },
+        { label: "Users", href: "/ppi/users", adminOnly: true },
+        { label: "Device bindings", href: "/ppi/devices", adminOnly: true },
       ],
     },
   ],
@@ -140,7 +142,7 @@ export function Sidebar() {
     .filter((section) => !(section.hiddenForScopedRole && (isScopedRole || role === null)) && !(section.hqOnly && !isHq))
     .map((section) => ({
       ...section,
-      items: section.items.filter((item) => !((item.hiddenForScopedRole && (isScopedRole || role === null)) || (item.hiddenForSupervisor && (isSupervisor || role === null)))),
+      items: section.items.filter((item) => !((item.hiddenForScopedRole && (isScopedRole || role === null)) || (item.hiddenForSupervisor && (isSupervisor || role === null)) || (item.adminOnly && role !== "ADMIN"))),
     }))
     .filter((section) => section.items.length > 0);
 

@@ -237,6 +237,26 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
 
   const detailQuote = quotes.find((row) => row.quote_id === detailId) || null;
 
+  // Select-all and bulk approval, at the top of the list and again after the
+  // last price so a long page can be approved without scrolling back up. The
+  // bottom copy repeats the outcome, which the top banner shows out of view.
+  const bulkControls = (position: "top" | "bottom") => (
+    <div className="flex flex-wrap items-center gap-2">
+      {position === "bottom" && (actionError || notice) && (
+        <p role="status" className={clsx("text-xs font-semibold", actionError ? "text-rose-700" : "text-emerald-700")}>{actionError || notice}</p>
+      )}
+      <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-prism-text">
+        <input type="checkbox" className="accent-prism-purple" checked={selectedIds.length === selectable.length}
+          aria-label={position === "bottom" ? "Select all on page (bottom)" : undefined}
+          onChange={(event) => setSelected(event.target.checked ? new Set(selectable.map((quote) => quote.quote_id)) : new Set())} />
+        Select all on page
+      </label>
+      <button type="button" disabled={!selectedIds.length || bulkBusy} onClick={() => void approveSelected()} className="rounded-full bg-teal-600 px-4 py-2 text-xs font-bold text-white hover:bg-teal-700 disabled:opacity-40">
+        {bulkBusy ? "Approving…" : `Approve selected (${selectedIds.length})`}
+      </button>
+    </div>
+  );
+
   return (
     <section className="mt-6 rounded-3xl border border-prism-border/70 bg-white shadow-sm">
       <div className="flex flex-col gap-3 border-b border-prism-border/70 p-5 sm:flex-row sm:items-start sm:justify-between">
@@ -282,18 +302,7 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
             </select>
           </label>
         </div>
-        {selectable.length > 0 && (
-          <div className="flex flex-wrap items-center gap-2">
-            <label className="flex cursor-pointer items-center gap-2 text-xs font-bold text-prism-text">
-              <input type="checkbox" className="accent-prism-purple" checked={selectedIds.length === selectable.length}
-                onChange={(event) => setSelected(event.target.checked ? new Set(selectable.map((quote) => quote.quote_id)) : new Set())} />
-              Select all on page
-            </label>
-            <button type="button" disabled={!selectedIds.length || bulkBusy} onClick={() => void approveSelected()} className="rounded-full bg-teal-600 px-4 py-2 text-xs font-bold text-white hover:bg-teal-700 disabled:opacity-40">
-              {bulkBusy ? "Approving…" : `Approve selected (${selectedIds.length})`}
-            </button>
-          </div>
-        )}
+        {selectable.length > 0 && bulkControls("top")}
       </div>
 
       <div className="flex flex-wrap items-center gap-2 border-b border-prism-border/60 px-5 py-3">
@@ -410,6 +419,10 @@ export function PriceReviewPanel({ periodId, role, onChanged }: { periodId: stri
           <p className="col-span-full py-10 text-center text-sm text-prism-muted">{search.trim() ? `No prices match “${search.trim()}”` : decidedBy ? `No prices ${FILTER_GROUPS.flatMap((g) => g.options).find(([v]) => v === decidedBy)?.[1].toLowerCase()}` : view === "all" ? "No prices synced yet" : "Nothing is waiting for your review"}{flaggedOnly ? " among flagged prices" : ""}{correctedOnly ? " among corrected prices" : ""}{narrowed ? " for the chosen filters" : ""}.</p>
         )}
       </div>
+
+      {selectable.length > 0 && quotes.length > 0 && (
+        <div className="flex justify-end border-t border-prism-border/60 px-5 py-3">{bulkControls("bottom")}</div>
+      )}
 
       {total > pageSize && (
         <TablePagination page={page} pageSize={pageSize} total={total} onPageChange={setPage} onPageSizeChange={(size) => { setPageSize(size); setPage(1); }} />
