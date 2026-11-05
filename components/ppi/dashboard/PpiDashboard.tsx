@@ -204,10 +204,18 @@ export function PpiDashboard() {
             status={state.status ?? ""}
             search={state.search ?? ""}
             page={Number(state.page) || 1}
+            regionId={state.regionId}
+            regions={o.scope.level === "NATIONAL" ? options?.regions ?? [] : null}
             onStatus={(status) => update({ status: status || null, page: null })}
             onSearch={(search) => update({ search: search || null, page: null })}
-            onPage={(page) => update({ page: String(page) })}
+            onPage={(page) => update({ page: page > 1 ? String(page) : null })}
+            onRegion={(regionId) => go({ regionId, districtId: null, supervisorId: null, enumeratorId: null })}
             onOpen={(row) => row.initiationId && openEstablishment(row.initiationId)}
+            onMoreFilters={() => {
+              const panel = document.getElementById("ppi-filters");
+              panel?.scrollIntoView({ behavior: "smooth", block: "start" });
+              panel?.querySelector<HTMLElement>("select, button")?.focus({ preventScroll: true });
+            }}
             csvHref={csv({ dataset: "breakdown", level: "establishment", status: state.status, search: state.search })}
           />
         ) : (
@@ -324,7 +332,7 @@ function FilterBar({ overview, state, options, onFilter, href }: {
   const select = "min-h-10 w-full rounded-xl border border-prism-border bg-white px-3 py-2 text-xs font-bold text-prism-text";
   const active = [state.regionId, state.districtId, state.supervisorId, state.enumeratorId, state.questionnaireType, state.mode].filter(Boolean).length;
   return (
-    <section aria-label="Filters" className="mt-6 rounded-3xl border border-prism-border/70 bg-white p-4 shadow-sm sm:p-5">
+    <section id="ppi-filters" aria-label="Filters" className="mt-6 scroll-mt-4 rounded-3xl border border-prism-border/70 bg-white p-4 shadow-sm sm:p-5">
       {/* Phones: the filters fold away behind one button. */}
       <button type="button" onClick={() => setOpen((v) => !v)} aria-expanded={open} aria-controls="ppi-filter-fields"
         className={clsx("flex min-h-10 w-full items-center justify-between rounded-xl bg-prism-bg px-3 text-xs font-bold text-prism-text sm:hidden", focusRing)}>

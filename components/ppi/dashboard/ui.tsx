@@ -112,7 +112,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, s
 
 // Fetches the export first, so a refusal (e.g. an expired session) shows its
 // message instead of being saved as a .csv file holding JSON.
-export function CsvLink({ href, label = "Download CSV" }: { href: string; label?: string }) {
+export function CsvLink({ href, label = "Download CSV", variant = "pill" }: { href: string; label?: string; variant?: "pill" | "outline" }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const download = async () => {
@@ -141,7 +141,12 @@ export function CsvLink({ href, label = "Download CSV" }: { href: string; label?
   };
   return (
     <span className="inline-flex flex-col items-start gap-1 self-start">
-      <button type="button" onClick={download} disabled={busy} className={clsx("inline-flex min-h-9 items-center rounded-full border border-prism-border px-3 py-1.5 text-xs font-bold text-prism-text hover:bg-prism-bg disabled:opacity-60", focusRing)}>
+      <button type="button" onClick={download} disabled={busy} className={clsx(variant === "outline"
+        ? "inline-flex min-h-11 items-center gap-2 rounded-xl border border-prism-text bg-white px-5 text-sm font-bold text-prism-text hover:bg-prism-bg disabled:opacity-60"
+        : "inline-flex min-h-9 items-center rounded-full border border-prism-border px-3 py-1.5 text-xs font-bold text-prism-text hover:bg-prism-bg disabled:opacity-60", focusRing)}>
+        {variant === "outline" ? (
+          <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></svg>
+        ) : null}
         {busy ? "Preparing…" : label}
       </button>
       {error ? <span role="alert" className="text-[11px] font-semibold text-red-700">{error}</span> : null}
