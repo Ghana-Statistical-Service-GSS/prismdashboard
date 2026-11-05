@@ -8,7 +8,7 @@ import { ppiKeys } from "../api";
 import { usePpiQuery } from "../usePpiQuery";
 import type { Breakdown, EstablishmentRow, InitiationDetail, RemovalRequest, SpecObservations } from "./types";
 import { age, count, dateTime, INVITE, QUESTIONNAIRE_SHORT, SERIES_LABEL, STATUS, statusText, SYNC } from "./format";
-import { CsvLink, focusRing, Notice, Panel, Pill } from "./ui";
+import { CsvLink, focusRing, LabelledSelect, Notice, Panel, Pill } from "./ui";
 
 export const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "All" },
@@ -177,18 +177,6 @@ function MorePage({ userId, path, children }: { userId: string; path: string; ch
   const list = usePpiQuery<Breakdown<EstablishmentRow>>(ppiKeys.dashboard("breakdown", userId, path), `/breakdown?${path}`);
   if (!list.data) return null;
   return <>{children(list.data.rows)}</>;
-}
-
-function LabelledSelect({ label, value, onChange, children }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode }) {
-  return (
-    <label className={clsx("relative flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-prism-border bg-white pl-4 pr-9 text-sm focus-within:ring-2 focus-within:ring-prism-purple/40")}>
-      <span className="whitespace-nowrap font-bold text-prism-text">{label}:</span>
-      <select value={value} onChange={(e) => onChange(e.target.value)} className="min-w-0 flex-1 appearance-none truncate bg-transparent py-2 text-prism-text outline-none">
-        {children}
-      </select>
-      <span aria-hidden="true" className="pointer-events-none absolute right-3 text-prism-muted">⌄</span>
-    </label>
-  );
 }
 
 function SortHeader({ label, active, dir, onClick, className }: { label: string; active: boolean; dir: "asc" | "desc"; onClick: () => void; className?: string }) {

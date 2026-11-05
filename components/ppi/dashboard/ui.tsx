@@ -29,7 +29,7 @@ export function PageLink({ href, className, children, ariaLabel, ariaCurrent }: 
 
 const ACCENT = { purple: "bg-prism-purple", teal: "bg-prism-teal", pink: "bg-prism-pink", rose: "bg-rose-500", amber: "bg-amber-400", slate: "bg-slate-300" };
 
-export function MetricCard({ label, value, hint, accent, pct, pctLabel, href, linkLabel, children }: {
+export function MetricCard({ label, value, hint, accent, pct, pctLabel, href, linkLabel, action, children }: {
   label: string;
   value: string;
   hint: ReactNode;
@@ -38,13 +38,15 @@ export function MetricCard({ label, value, hint, accent, pct, pctLabel, href, li
   pctLabel?: string;
   href?: string;
   linkLabel?: string;
+  // A control at the foot of the card (e.g. "View breakdown").
+  action?: ReactNode;
   children?: ReactNode;
 }) {
   return (
     <article className="relative flex flex-col overflow-hidden rounded-3xl border border-prism-border/70 bg-white p-4 shadow-sm sm:p-5">
       <span className={`absolute left-0 top-0 h-full w-1.5 ${ACCENT[accent]}`} aria-hidden="true" />
       <div className="flex flex-wrap items-start justify-between gap-x-2 gap-y-1">
-        <h3 className="text-[10px] font-bold uppercase tracking-[0.14em] text-prism-muted sm:text-[11px]">{label}</h3>
+        <h3 className="text-xs font-bold text-prism-muted sm:text-sm">{label}</h3>
         {pct !== undefined && (
           <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-black ${tone(pct)}`} title={pctLabel}>
             <span className="sr-only">{pctLabel}: </span>{pctText(pct)}
@@ -54,13 +56,32 @@ export function MetricCard({ label, value, hint, accent, pct, pctLabel, href, li
       <p className="mt-2 text-2xl font-black tracking-tight text-prism-text sm:mt-3 sm:text-3xl">{value}</p>
       <div className="mt-1 text-[11px] leading-snug text-prism-muted sm:text-xs">{hint}</div>
       {children}
-      {href && (
-        <PageLink href={href} ariaLabel={`${label}: ${linkLabel || "view list"}`} className={clsx("mt-auto self-start pt-3 text-[10px] font-black uppercase tracking-[0.12em] text-prism-purple hover:underline", focusRing)}>
-          <span className="sm:hidden">View list →</span>
-          <span className="hidden sm:inline">{linkLabel || "View list"} →</span>
-        </PageLink>
+      {(href || action) && (
+        <div className="mt-auto flex flex-col items-start gap-2 pt-3">
+          {href ? (
+            <PageLink href={href} ariaLabel={`${label}: ${linkLabel || "view list"}`} className={clsx("text-xs font-bold text-prism-purple hover:underline sm:text-sm", focusRing)}>
+              <span className="sm:hidden">View list →</span>
+              <span className="hidden sm:inline">{linkLabel || "View list"} →</span>
+            </PageLink>
+          ) : <span />}
+          {action}
+        </div>
       )}
     </article>
+  );
+}
+
+// A select with its label inside the box ("Status: Submitted"), as in the
+// establishment list and the filters.
+export function LabelledSelect({ label, value, onChange, children, className }: { label: string; value: string; onChange: (value: string) => void; children: ReactNode; className?: string }) {
+  return (
+    <label className={clsx("relative flex min-h-11 min-w-0 flex-1 items-center gap-1.5 rounded-xl border border-prism-border bg-white pl-4 pr-9 text-sm focus-within:ring-2 focus-within:ring-prism-purple/40", className)}>
+      <span className="whitespace-nowrap font-bold text-prism-text">{label}:</span>
+      <select value={value} onChange={(e) => onChange(e.target.value)} className="min-w-0 flex-1 appearance-none truncate bg-transparent py-2 text-prism-text outline-none">
+        {children}
+      </select>
+      <span aria-hidden="true" className="pointer-events-none absolute right-3 text-prism-muted">⌄</span>
+    </label>
   );
 }
 
@@ -93,7 +114,7 @@ export function Segmented<T extends string>({ label, value, options, onChange, s
 }) {
   return (
     <div role="group" aria-label={label} className="-mx-1 flex min-w-0 items-center gap-1.5 overflow-x-auto px-1 py-0.5 sm:flex-wrap sm:overflow-visible">
-      {showLabel && <span aria-hidden="true" className="mr-1 shrink-0 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted">{label}</span>}
+      {showLabel && <span aria-hidden="true" className="mr-1 shrink-0 text-sm font-bold text-prism-text">{label}:</span>}
       {options.map((o) => (
         <button
           key={o.value}

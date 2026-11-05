@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import clsx from "clsx";
-import type { Overview, Stage, WorkflowStatus } from "./types";
-import { age, count, dateTime, SERIES_LABEL, STAGE_SHORT, STATUS, SYNC } from "./format";
+import { ppiKeys } from "../api";
+import { usePpiQuery } from "../usePpiQuery";
+import type { Breakdown, GroupLevel, GroupRow, Overview, Stage, WorkflowStatus } from "./types";
+import { age, count, dateTime, LEVEL_LABEL, pctText, SERIES_LABEL, STAGE_SHORT, STATUS, SYNC, tone } from "./format";
 import { focusRing, MetricCard, PageLink } from "./ui";
 import type { StatePatch } from "./useDashboardState";
 
@@ -11,11 +14,20 @@ type Props = {
   overview: Overview;
   href: (patch: StatePatch) => string;
   canListReaders: boolean;
+  userId: string;
+  // The dashboard filters (every request carries them).
+  query: string;
 };
+
+// The breakdown behind "Establishments submitted": HQ by region, an RS by
+// district of their region, a Supervisor by reader.
+const BREAKDOWN_LEVEL: Partial<Record<Overview["scope"]["level"], GroupLevel>> = { NATIONAL: "region", REGION: "district", SUPERVISED: "reader" };
 
 // The six headline figures for the round's current status (never the
 // activity period), each linking to the list behind it.
-export function HeadlineCards({ overview, href, canListReaders }: Props) {
+export function HeadlineCards({ overview, href, canListReaders, userId, query }: Props) {
+  const [breakdown, setBreakdown] = useState(false);
+  const breakdownLevel = BREAKDOWN_LEVEL[overview.scope.level];
   const h = overview.headline!;
   const stages = overview.round?.reviewStages ?? ["SUPERVISOR"];
   const list = (status: string) => href({ view: "establishment", status, initiationId: null, page: null });
@@ -36,8 +48,16 @@ export function HeadlineCards({ overview, href, canListReaders }: Props) {
       hint={<>of {count(h.assigned)} assigned · {count(h.events)} submission{h.events === 1 ? "" : "s"} ({count(h.resubmissions)} resubmission{h.resubmissions === 1 ? "" : "s"})</>}
       href={list("submitted")}
       linkLabel="Submitted establishments"
+      action={breakdownLevel ? (
+        <button type="button" onClick={() => setBreakdown(true)} className={clsx("rounded-xl border border-prism-purple/40 px-3 py-1.5 text-xs font-bold text-prism-purple hover:bg-prism-purple hover:text-white", focusRing)}>
+          View by {LEVEL_LABEL[breakdownLevel].one.toLowerCase()}
+        </button>
+      ) : undefined}
     />
   );
+  const breakdownModal = breakdown && breakdownLevel
+    ? <SubmittedBreakdown level={breakdownLevel} userId={userId} query={query} onClose={() => setBreakdown(false)} />
+    : null;
   const observationsCard = (
     <MetricCard
       label="Price observations received"
@@ -108,6 +128,7 @@ export function HeadlineCards({ overview, href, canListReaders }: Props) {
         {returnedCard}
         {approvedCard}
         <MetricCard label="Sync status" value={state ? SYNC[state].label : "—"} accent="slate" hint={<>Last download {dateTime(sync?.lastDownloadAt)} · last upload {dateTime(sync?.lastUploadAt)}{sync?.refused ? " · refusals in the last upload" : ""}</>} />
+        {breakdownModal}
       </section>
     );
   }
@@ -129,7 +150,78 @@ export function HeadlineCards({ overview, href, canListReaders }: Props) {
         href={canListReaders ? href({ view: "reader", initiationId: null, status: null, page: null }) : undefined}
         linkLabel="Readers"
       />
+      {breakdownModal}
     </section>
+  );
+}
+
+// Establishments submitted against assigned for each region (district,
+// reader), worst first, as CPI initiation's breakdowns.
+function SubmittedBreakdown({ level, userId, query, onClose }: { level: GroupLevel; userId: string; query: string; onClose: () => void }) {
+  const params = new URLSearchParams(query);
+  params.set("level", level);
+  params.set("pageSize", "1000");
+  const data = usePpiQuery<Breakdown<GroupRow>>(ppiKeys.dashboard("breakdown", userId, params.toString()), `/breakdown?${params}`);
+  useEffect(() => {
+    const close = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
+    window.addEventListener("keydown", close);
+    return () => window.removeEventListener("keydown", close);
+  }, [onClose]);
+  const names = LEVEL_LABEL[level];
+  const rows = (data.data?.rows ?? [])
+    .filter((r) => r.assigned > 0)
+    .sort((a, b) => (a.coverage ?? 0) - (b.coverage ?? 0) || a.submitted - b.submitted || (a.name ?? "").localeCompare(b.name ?? ""));
+  const assigned = rows.reduce((n, r) => n + r.assigned, 0);
+  const submitted = rows.reduce((n, r) => n + r.submitted, 0);
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <section role="dialog" aria-modal="true" aria-labelledby="ppi-breakdown-title" className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-prism-border/70 px-6 py-5">
+          <div>
+            <p className="text-xs font-bold text-prism-teal">Lowest completion first</p>
+            <h2 id="ppi-breakdown-title" className="mt-1 text-xl font-black text-prism-text">Establishments submitted by {names.one.toLowerCase()}</h2>
+            <p className="mt-1 text-sm text-prism-muted">Completion is submitted establishments against those assigned{rows.length ? `: ${count(submitted)} of ${count(assigned)} overall (${pctText(assigned ? (submitted / assigned) * 100 : null)}).` : "."}</p>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Close breakdown" className={clsx("grid h-9 w-9 shrink-0 place-items-center rounded-full bg-prism-bg text-lg font-bold text-prism-muted hover:text-prism-text", focusRing)}>×</button>
+        </header>
+        <div className="overflow-auto">
+          {data.error ? <p role="alert" className="p-6 text-sm text-rose-700">{data.error}</p> : (
+            <table className="min-w-full text-left text-sm">
+              <caption className="sr-only">Establishments submitted and assigned by {names.one.toLowerCase()}</caption>
+              <thead className="sticky top-0 bg-slate-50 text-xs font-bold text-prism-muted">
+                <tr>
+                  <th scope="col" className="px-6 py-3">Rank</th>
+                  <th scope="col" className="px-4 py-3">{names.one}</th>
+                  <th scope="col" className="px-4 py-3 text-right">Submitted</th>
+                  <th scope="col" className="px-4 py-3 text-right">Assigned</th>
+                  <th scope="col" className="px-6 py-3 text-right">Completion</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row, k) => (
+                  <tr key={row.key ?? "none"} className="border-t border-prism-border/60">
+                    <td className="px-6 py-3 font-black text-prism-muted">{k + 1}</td>
+                    <th scope="row" className="px-4 py-3 text-left font-normal">
+                      <span className="font-bold text-prism-text">{row.name || `No ${names.one.toLowerCase()} recorded`}</span>
+                      {row.parentName && <span className="block text-xs text-prism-muted">{row.parentName}</span>}
+                    </th>
+                    <td className="px-4 py-3 text-right font-black tabular-nums text-prism-text">{count(row.submitted)}</td>
+                    <td className="px-4 py-3 text-right tabular-nums text-prism-muted">{count(row.assigned)}</td>
+                    <td className="px-6 py-3 text-right">
+                      <span className={clsx("inline-flex min-w-16 justify-center rounded-full px-2.5 py-1 text-xs font-black", tone(row.coverage))}>{pctText(row.coverage)}</span>
+                      <span className="mt-1 block h-1.5 overflow-hidden rounded-full bg-prism-bg" aria-hidden="true">
+                        <span className={clsx("block h-full rounded-full", (row.coverage ?? 0) < 50 ? "bg-red-500" : (row.coverage ?? 0) < 80 ? "bg-yellow-500" : "bg-emerald-500")} style={{ width: `${Math.min(row.coverage ?? 0, 100)}%` }} />
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+                {!rows.length && <tr><td colSpan={5} className="px-6 py-10 text-center text-prism-muted">{data.loading ? "Loading…" : `No ${names.many.toLowerCase()} with assigned establishments in this view.`}</td></tr>}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </section>
+    </div>
   );
 }
 

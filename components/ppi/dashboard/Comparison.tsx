@@ -13,8 +13,8 @@ export type Metric = "observations" | "submitted" | "approved";
 export type SortChoice = "count" | "coverage" | "name";
 
 const METRICS: { value: Metric; label: string }[] = [
-  { value: "observations", label: "Price observations" },
   { value: "submitted", label: "Establishments submitted" },
+  { value: "observations", label: "Price observations" },
   { value: "approved", label: "Finally approved" },
 ];
 
@@ -79,7 +79,7 @@ export function Comparison({ level, rows, stages, metric, sort, onMetric, onSort
       <div className="flex flex-col gap-3 border-b border-prism-border/70 p-4 sm:p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <h2 id="ppi-comparison-title" className="text-lg font-black text-prism-text">Submissions by {names.one.toLowerCase()}</h2>
+            <h2 id="ppi-comparison-title" className="text-xl font-black text-prism-text">Submissions by {names.one.toLowerCase()}</h2>
             <p className="mt-1 text-xs text-prism-muted">Counts on the bars; coverage is submitted (or approved) against assigned establishments.{nextLabel ? ` Select a ${names.one.toLowerCase()} to see its ${nextLabel}.` : ""}</p>
           </div>
           <CsvLink href={csvHref} />
@@ -87,8 +87,8 @@ export function Comparison({ level, rows, stages, metric, sort, onMetric, onSort
         {groupBy}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Segmented label="Measure" showLabel value={metric} options={METRICS} onChange={onMetric} />
-          <label className="flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted">
-              Sort
+          <label className="flex items-center gap-2 text-sm font-bold text-prism-text">
+              Sort:
               <select value={sort} onChange={(e) => onSort(e.target.value as SortChoice)} className={clsx("min-h-9 rounded-xl border border-prism-border bg-white px-2 py-1.5 text-xs font-bold text-prism-text", focusRing)}>
                 <option value="count">Highest count</option>
                 <option value="coverage">Lowest coverage</option>
@@ -219,7 +219,7 @@ function ComparisonTable({ rows, level, stages, open, setOpen, onOpen, nextLabel
       <div className="relative hidden overflow-x-auto border-t border-prism-border/60 md:block">
         <table className="min-w-full text-left text-xs">
           <caption className="sr-only">{`${names.many}: readers, assigned and submitted establishments, observations, approvals, reviews, returns and sync follow-up`}</caption>
-          <thead className="text-[10px] uppercase tracking-[0.12em] text-prism-muted">
+          <thead className="bg-prism-bg/60 text-xs font-bold text-prism-text">
             <tr>
               <th scope="col" className="px-4 py-3"><span className="sr-only">Details</span></th>
               <th scope="col" className="py-3 pr-3">{names.one}</th>

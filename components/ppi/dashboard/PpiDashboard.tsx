@@ -14,7 +14,7 @@ import { EstablishmentDetail, EstablishmentList } from "./Establishments";
 import { CollectionActivity, NeedsAttention, ReviewBottlenecks } from "./Monitoring";
 import { CorrectionsAndQuality, QuestionnaireCompleteness, SyncAndFreshness } from "./Quality";
 import { SelfCompletionPanel } from "./SelfCompletion";
-import { focusRing, Notice, PageLink, Segmented } from "./ui";
+import { focusRing, LabelledSelect, Notice, PageLink, Segmented } from "./ui";
 import { apiQuery, type DashboardState, type StatePatch, useDashboardState } from "./useDashboardState";
 
 // The levels each role may group by (the server enforces the same list).
@@ -192,7 +192,7 @@ export function PpiDashboard() {
       ) : o.headline && o.headline.assigned === 0 && <div className="mt-4"><Notice>No establishment is assigned in this view: percentages are shown as n/a.</Notice></div>}
 
       <div className={clsx("mt-6 space-y-6 transition-opacity", overview.loading && "opacity-70")}>
-        {o.headline && <HeadlineCards overview={o} href={href} canListReaders={canListReaders} />}
+        {o.headline && <HeadlineCards overview={o} href={href} canListReaders={canListReaders} userId={user.user_id} query={filterQuery} />}
 
         {groupsQuery.error && <Notice tone="error">{groupsQuery.error}</Notice>}
         {state.initiationId ? (
@@ -223,7 +223,7 @@ export function PpiDashboard() {
             level={rowsLevel}
             rows={groupRows}
             stages={stages}
-            metric={(state.metric as Metric) || "observations"}
+            metric={(state.metric as Metric) || "submitted"}
             sort={(state.sort as SortChoice) || "count"}
             onMetric={(metric) => update({ metric })}
             onSort={(sort) => update({ sort })}
@@ -292,7 +292,10 @@ function Header({ user, overview, onRefresh, stale, loading }: { user: Dashboard
       <div className="flex items-center gap-3 text-xs text-prism-muted">
         {overview && <span aria-live="polite">{loading ? "Updating…" : `Updated ${dateTime(overview.generatedAt)}`}{stale ? " (out of date)" : ""}</span>}
         {user && overview && (
-          <button type="button" onClick={onRefresh} className={clsx("min-h-9 rounded-full bg-white px-4 py-2 font-bold text-prism-purple shadow-sm ring-1 ring-prism-border/70 hover:ring-prism-purple/40", focusRing)}>Refresh</button>
+          <button type="button" onClick={onRefresh} className={clsx("inline-flex min-h-11 items-center gap-2 rounded-xl border border-prism-text bg-white px-5 text-sm font-bold text-prism-text hover:bg-prism-bg", focusRing)}>
+            <svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 5v6h-6" /></svg>
+            Refresh
+          </button>
         )}
       </div>
       {!overview && loading && <span className="sr-only">Loading PPI figures…</span>}
@@ -329,7 +332,6 @@ function FilterBar({ overview, state, options, onFilter, href }: {
   if (showReader && state.enumeratorId) crumbs.push({ label: name(options?.readers, state.enumeratorId, "Reader"), href: href({ ...clearDrill, regionId: state.regionId, districtId: state.districtId, supervisorId: state.supervisorId, enumeratorId: state.enumeratorId, view: "establishment" }) });
   if (state.initiationId) crumbs.push({ label: "Establishment", href: "" });
 
-  const select = "min-h-10 w-full rounded-xl border border-prism-border bg-white px-3 py-2 text-xs font-bold text-prism-text";
   const active = [state.regionId, state.districtId, state.supervisorId, state.enumeratorId, state.questionnaireType, state.mode].filter(Boolean).length;
   return (
     <section id="ppi-filters" aria-label="Filters" className="mt-6 scroll-mt-4 rounded-3xl border border-prism-border/70 bg-white p-4 shadow-sm sm:p-5">
@@ -341,56 +343,38 @@ function FilterBar({ overview, state, options, onFilter, href }: {
       </button>
       <div id="ppi-filter-fields" className={clsx("grid-cols-1 gap-3 sm:flex sm:flex-wrap", open ? "mt-3 grid" : "hidden")}>
         {showRegion && (
-          <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
-            Region
-            <select value={state.regionId ?? ""} onChange={(e) => onFilter({ regionId: e.target.value || null, districtId: null, supervisorId: null, enumeratorId: null })} className={clsx(select, focusRing)}>
-              <option value="">All regions</option>
+          <LabelledSelect label="Region" value={state.regionId ?? ""} onChange={(v) => onFilter({ regionId: v || null, districtId: null, supervisorId: null, enumeratorId: null })} className="sm:min-w-52 sm:max-w-xs">
+              <option value="">All</option>
               {regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-          </label>
+          </LabelledSelect>
         )}
         {showDistrict && (
-          <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
-            District
-            <select value={state.districtId ?? ""} onChange={(e) => onFilter({ districtId: e.target.value || null })} className={clsx(select, focusRing)}>
-              <option value="">All districts</option>
+          <LabelledSelect label="District" value={state.districtId ?? ""} onChange={(v) => onFilter({ districtId: v || null })} className="sm:min-w-52 sm:max-w-xs">
+              <option value="">All</option>
               {districts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </label>
+          </LabelledSelect>
         )}
         {showSupervisor && (
-          <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
-            Supervisor
-            <select value={state.supervisorId ?? ""} onChange={(e) => onFilter({ supervisorId: e.target.value || null, enumeratorId: null })} className={clsx(select, focusRing)}>
-              <option value="">All supervisors</option>
+          <LabelledSelect label="Supervisor" value={state.supervisorId ?? ""} onChange={(v) => onFilter({ supervisorId: v || null, enumeratorId: null })} className="sm:min-w-52 sm:max-w-xs">
+              <option value="">All</option>
               {supervisors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-            </select>
-          </label>
+          </LabelledSelect>
         )}
         {showReader && (
-          <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
-            Reader
-            <select value={state.enumeratorId ?? ""} onChange={(e) => onFilter({ enumeratorId: e.target.value || null })} className={clsx(select, focusRing)}>
-              <option value="">All readers</option>
+          <LabelledSelect label="Reader" value={state.enumeratorId ?? ""} onChange={(v) => onFilter({ enumeratorId: v || null })} className="sm:min-w-52 sm:max-w-xs">
+              <option value="">All</option>
               {readers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-            </select>
-          </label>
+          </LabelledSelect>
         )}
-        <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
-          Questionnaire
-          <select value={state.questionnaireType ?? ""} onChange={(e) => onFilter({ questionnaireType: e.target.value || null })} className={clsx(select, focusRing)}>
-            <option value="">All questionnaires</option>
+        <LabelledSelect label="Questionnaire" value={state.questionnaireType ?? ""} onChange={(v) => onFilter({ questionnaireType: v || null })} className="sm:min-w-52 sm:max-w-xs">
+            <option value="">All</option>
             {(options?.questionnaireTypes ?? []).map((qt) => <option key={qt} value={qt}>{QUESTIONNAIRE_SHORT[qt] ?? qt}</option>)}
-          </select>
-        </label>
-        <label className="flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1">
-          Completed by
-          <select value={state.mode ?? ""} onChange={(e) => onFilter({ mode: e.target.value || null })} className={clsx(select, focusRing)}>
+        </LabelledSelect>
+        <LabelledSelect label="Completed by" value={state.mode ?? ""} onChange={(v) => onFilter({ mode: v || null })} className="sm:min-w-52 sm:max-w-xs">
             <option value="">Firm or enumerator</option>
             <option value="SELF">{MODE_LABEL.SELF}</option>
             <option value="ENUMERATOR">{MODE_LABEL.ENUMERATOR}</option>
-          </select>
-        </label>
+        </LabelledSelect>
       </div>
 
       <div className="mt-4 flex flex-col gap-2 border-t border-prism-border/60 pt-3 sm:flex-row sm:items-center sm:justify-between">

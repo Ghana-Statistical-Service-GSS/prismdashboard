@@ -2,11 +2,11 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { FormEvent, ReactNode, useRef, useState } from "react";
+import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   amountText, codedText, formatDateTime, formatDecimal, PpiApiError, ppiApi, ppiKeys, QUESTIONNAIRE_LABEL, STAGE_LABEL,
-  type AuditChange, type Category, type Product, type ReviewIssue, type Snapshot, type Specification, type SubmissionDetail,
+  type AuditChange, type Category, type Product, type QueueItem, type ReviewIssue, type Snapshot, type Specification, type SubmissionDetail,
 } from "./api";
 import { invalidatePpi, usePpiQuery } from "./usePpiQuery";
 
@@ -65,10 +65,25 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
   const [outcome, setOutcome] = useState<{ tone: "ok" | "error"; text: string; stale?: boolean } | null>(null);
   const [showAudit, setShowAudit] = useState(false);
   const commentBox = useRef<HTMLTextAreaElement>(null);
+  // The cases waiting for this reviewer, oldest first: the side list and the
+  // case opened after a decision.
+  const queue = usePpiQuery<{ total: number; items: QueueItem[] }>(ppiKeys.queue(QUEUE_PARAMS), `/review-queue?${QUEUE_PARAMS}`);
+  // The decision taken on the previous case, when this one was opened after it.
+  const [arrived, setArrived] = useState<{ decision: string; name: string } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(LAST_DECISION);
+      if (raw) { sessionStorage.removeItem(LAST_DECISION); setArrived(JSON.parse(raw)); }
+    } catch { /* storage unavailable: no note */ }
+  }, []);
 
   if (detail.error && !detail.data) return <p role="alert" className="rounded-2xl bg-rose-50 p-4 text-sm font-semibold text-rose-800">{detail.error}</p>;
   if (!detail.data) return <p className="text-sm text-prism-muted">Loading…</p>;
   const d = detail.data;
+  const waiting = (queue.data?.items ?? []).filter((q) => q.canDecide && q.currentSubmissionId);
+  const position = waiting.findIndex((q) => q.initiationId === d.initiation.initiationId);
+  // After this one in line (oldest first), then the ones before it.
+  const nextInLine = (position >= 0 ? [...waiting.slice(position + 1), ...waiting.slice(0, position)] : waiting)[0] ?? null;
   const snap = d.submission.snapshot;
   const est = snap.establishment;
   const interview = snap.initiation;
@@ -143,8 +158,15 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
       });
       setDialog(null);
       setIssues([]);
-      setOutcome({ tone: "ok", text: decision === "APPROVED" ? "Approved." : "Returned to the enumerator for correction." });
+      const done = decision === "APPROVED" ? "Approved" : "Returned for correction";
       invalidatePpi("ppi:");
+      // Straight on to the next case in line; the note says what was decided.
+      if (nextInLine?.currentSubmissionId) {
+        try { sessionStorage.setItem(LAST_DECISION, JSON.stringify({ decision: done, name: est.general.establishmentName || est.establishmentCode })); } catch { /* no note */ }
+        router.push(`/ppi/review/${nextInLine.currentSubmissionId}`);
+        return;
+      }
+      setOutcome({ tone: "ok", text: `${done}. Nothing else is waiting for your review.` });
     } catch (error) {
       setDialog(null);
       const e = error as PpiApiError;
@@ -190,6 +212,11 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                 </option>
               ))}
             </select>
+            {nextInLine ? (
+              <Link href={`/ppi/review/${nextInLine.currentSubmissionId}`} className="inline-flex min-h-10 items-center gap-1 rounded-xl px-3 text-sm font-bold text-prism-purple ring-1 ring-prism-border hover:bg-prism-bg" title={`Next in line: ${nextInLine.establishmentName}`}>
+                Next firm <span aria-hidden="true">→</span>
+              </Link>
+            ) : null}
           </div>
         </div>
         <Stepper stages={stages} workflowStatus={d.initiation.workflowStatus} reviewStage={d.initiation.reviewStage} />
@@ -201,6 +228,12 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
             This is an earlier submission, kept as it was reviewed.{" "}
             {d.initiation.currentSubmissionId ? <Link className="underline" href={`/ppi/review/${d.initiation.currentSubmissionId}`}>Open the current submission</Link> : null}
           </p>
+        ) : null}
+        {arrived ? (
+          <div role="status" className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-emerald-50 p-4 text-sm font-semibold text-emerald-800">
+            <span>{arrived.decision}: {arrived.name}. This is the next establishment waiting for you.</span>
+            <button type="button" onClick={() => setArrived(null)} className="text-xs font-bold underline">Dismiss</button>
+          </div>
         ) : null}
         {outcome ? (
           <div role={outcome.tone === "error" ? "alert" : "status"} className={clsx("flex flex-wrap items-center gap-3 rounded-2xl p-4 text-sm font-semibold", outcome.tone === "error" ? "bg-rose-50 text-rose-800" : "bg-emerald-50 text-emerald-800")}>
@@ -216,7 +249,8 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
       </div>
 
       <div className="mt-4 grid gap-4 xl:grid-cols-[15rem_minmax(0,1fr)_19rem]">
-        <aside className="self-start rounded-3xl bg-white p-4 shadow-sm ring-1 ring-prism-border/60 xl:sticky xl:top-4">
+        <div className="space-y-4 self-start xl:sticky xl:top-4 xl:max-h-[calc(100vh-9rem)] xl:overflow-y-auto xl:pb-2">
+        <aside className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-prism-border/60">
           <h2 className="text-base font-black text-prism-text">{checklist ? "Review checklist" : "Sections"}</h2>
           {checklist ? (
             <>
@@ -260,6 +294,8 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           {checklist && !complete ? <p className="mt-3 border-t border-prism-border/60 pt-3 text-xs text-prism-muted">Mark each page reviewed to unlock a decision.</p> : null}
           <button type="button" onClick={() => { goTo(PAGES.length - 1); setShowAudit(true); }} className="mt-3 text-sm font-semibold text-prism-purple underline">View change history</button>
         </aside>
+        <div className="hidden xl:block"><WaitingList waiting={waiting} total={queue.data?.total ?? null} currentId={d.initiation.initiationId} nextId={nextInLine?.initiationId ?? null} /></div>
+        </div>
 
         <section aria-labelledby="ppi-page-title" className="min-w-0 rounded-3xl bg-white p-5 shadow-sm ring-1 ring-prism-border/60 sm:p-6">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -362,6 +398,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
               ))}
             </ul>
           </section>
+          <div className="xl:hidden"><WaitingList waiting={waiting} total={queue.data?.total ?? null} currentId={d.initiation.initiationId} nextId={nextInLine?.initiationId ?? null} /></div>
         </aside>
       </div>
 
@@ -410,6 +447,44 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
 
       {dialog ? <DecisionForm decision={dialog} issues={issues} onRemove={(k) => setIssues((l) => l.filter((_, i) => i !== k))} onClose={() => setDialog(null)} onSubmit={decide} /> : null}
     </article>
+  );
+}
+
+const QUEUE_PARAMS = "status=SUBMITTED&sort=oldest&pageSize=100";
+const LAST_DECISION = "ppi:review:lastDecision";
+
+// The cases this reviewer can decide, oldest first; select one to switch.
+function WaitingList({ waiting, total, currentId, nextId }: { waiting: QueueItem[]; total: number | null; currentId: string; nextId: string | null }) {
+  return (
+    <section aria-labelledby="ppi-waiting" className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-prism-border/60">
+      <div className="flex items-center justify-between gap-2">
+        <h2 id="ppi-waiting" className="text-base font-black text-prism-text">Waiting for you</h2>
+        <span className="rounded-full bg-violet-100 px-2.5 py-0.5 text-xs font-black text-prism-purple">{waiting.length}</span>
+      </div>
+      <p className="mt-1 text-xs text-prism-muted">Oldest first. Select one to switch.</p>
+      {waiting.length ? (
+        <ol className="mt-3 max-h-72 space-y-1 overflow-y-auto pr-1">
+          {waiting.map((q) => {
+            const current = q.initiationId === currentId;
+            return (
+              <li key={q.initiationId}>
+                <Link
+                  href={`/ppi/review/${q.currentSubmissionId}`}
+                  aria-current={current ? "page" : undefined}
+                  className={clsx("block rounded-2xl px-3 py-2", current ? "bg-violet-50 ring-1 ring-violet-200" : "hover:bg-prism-bg")}
+                >
+                  <span className={clsx("block truncate text-sm font-bold", current ? "text-prism-purple" : "text-prism-text")}>{q.establishmentName}</span>
+                  <span className="block truncate text-xs text-prism-muted">{q.establishmentCode} · {STAGE_LABEL[q.reviewStage ?? ""] ?? "—"} · {formatDateTime(q.submittedAt)}</span>
+                  {current ? <span className="text-xs font-bold text-prism-purple">Now reviewing</span> : q.initiationId === nextId ? <span className="text-xs font-bold text-emerald-700">Next in line</span> : null}
+                </Link>
+              </li>
+            );
+          })}
+        </ol>
+      ) : <p className="mt-3 text-sm text-prism-muted">Nothing is waiting for your review.</p>}
+      {total !== null && total > waiting.length ? <p className="mt-2 text-xs text-prism-muted">Only cases you can decide are listed.</p> : null}
+      <Link href="/ppi/review" className="mt-3 inline-block text-sm font-semibold text-prism-purple underline">Open the full queue</Link>
+    </section>
   );
 }
 
