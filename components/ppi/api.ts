@@ -122,7 +122,18 @@ export type SubmissionDetail = {
   reviewProgress?: { pages: string[]; reviewed: string[] };
   // The round's review chain (e.g. SUPERVISOR, RS, HQ).
   reviewStages?: string[];
+  // The advisory AI check of the CPC codes (absent from older servers).
+  cpcCheck?: CpcCheck;
   reviewEvents: ReviewEvent[];
+};
+export type CpcVerdict = {
+  verdict: "FITS" | "DOUBTFUL" | "MISFIT"; reason: string; suggestedCode: string | null; suggestedDescription: string | null;
+  model: string; checkedAt: string;
+};
+// Results by category or product id.
+export type CpcCheck = { enabled: false } | {
+  enabled: true; status: "COMPLETE" | "CHECKING" | "PENDING" | "UNAVAILABLE"; pending: number; message: string | null;
+  model: string; results: Record<string, CpcVerdict>;
 };
 export type AuditChange = {
   changeId: number; entityType: string; recordId: string; operation: string;

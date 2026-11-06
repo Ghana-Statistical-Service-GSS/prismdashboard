@@ -6,7 +6,7 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   amountText, codedText, formatDateTime, formatDecimal, PpiApiError, ppiApi, ppiKeys, QUESTIONNAIRE_LABEL, STAGE_LABEL,
-  type AuditChange, type Category, type Product, type QueueItem, type ReviewIssue, type Snapshot, type Specification, type SubmissionDetail,
+  type AuditChange, type Category, type CpcCheck, type CpcVerdict, type Product, type QueueItem, type ReviewIssue, type Snapshot, type Specification, type SubmissionDetail,
 } from "./api";
 import { invalidatePpi, usePpiQuery } from "./usePpiQuery";
 
@@ -70,6 +70,36 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
   const queue = usePpiQuery<{ total: number; items: QueueItem[] }>(ppiKeys.queue(QUEUE_PARAMS), `/review-queue?${QUEUE_PARAMS}`);
   // The decision taken on the previous case, when this one was opened after it.
   const [arrived, setArrived] = useState<{ decision: string; name: string } | null>(null);
+  // The AI check of the CPC codes: started once when not done, then asked
+  // again every few seconds while it runs (a few minutes at most).
+  const [cpcCheck, setCpcCheck] = useState<CpcCheck | null>(null);
+  const cpcStarted = useRef(false);
+  const cpcPolls = useRef(0);
+  const currentCheck = cpcCheck ?? detail.data?.cpcCheck ?? null;
+  useEffect(() => {
+    if (!currentCheck?.enabled) return;
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ask = async (start: boolean) => {
+      try {
+        const next = await ppiApi<CpcCheck>(`/submissions/${submissionId}/cpc-check`, start ? { method: "POST" } : undefined);
+        if (!stopped) setCpcCheck(next);
+      } catch { /* the badge keeps its last state */ }
+    };
+    if (currentCheck.status === "PENDING" && !cpcStarted.current) {
+      cpcStarted.current = true;
+      void ask(true);
+    } else if (currentCheck.status === "CHECKING" && cpcPolls.current < 75) {
+      cpcPolls.current += 1;
+      timer = setTimeout(() => void ask(false), 4000);
+    }
+    return () => { stopped = true; if (timer) clearTimeout(timer); };
+  }, [currentCheck, submissionId]);
+  const retryCpcCheck = () => {
+    cpcStarted.current = false;
+    cpcPolls.current = 0;
+    if (currentCheck?.enabled) setCpcCheck({ ...currentCheck, status: "PENDING", message: null });
+  };
   useEffect(() => {
     try {
       const raw = sessionStorage.getItem(LAST_DECISION);
@@ -105,11 +135,20 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
 
   const targets = buildTargets(d);
   const pageTargets = targets[page.id];
-  const selected = pageTargets.find((t) => t.key === targetKey) ?? pageTargets[0];
+  // An unsaved comment keeps its item when the page changes (it stays in
+  // "Attach to" even though the item is on another page).
+  const allTargets = Object.values(targets).flat();
+  const selected = pageTargets.find((t) => t.key === targetKey) ?? allTargets.find((t) => t.key === targetKey) ?? pageTargets[0];
+  const attachChoices = pageTargets.some((t) => t.key === selected?.key) || !selected ? pageTargets : [selected, ...pageTargets];
 
+  const ai: Ai = {
+    check: currentCheck,
+    retry: retryCpcCheck,
+    suggest: canComment ? (t, text) => { setTargetKey(t.key); setCommentText(text); setCommentTab("add"); commentBox.current?.focus(); } : null,
+  };
   const goTo = (index: number) => {
     setPageIndex(index);
-    setTargetKey(null);
+    if (!commentText.trim()) setTargetKey(null);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const commentFor: CommentFor = (t) => (canComment ? (
@@ -315,8 +354,8 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
 
           <div className="mt-4">
             {page.id === "ESTABLISHMENT" ? <EstablishmentPage d={d} commentFor={commentFor} targets={targets.ESTABLISHMENT} /> : null}
-            {page.id === "REVENUE" ? <RevenuePage d={d} commentFor={commentFor} /> : null}
-            {page.id === "PRODUCTS" ? <ProductsPage d={d} commentFor={commentFor} /> : null}
+            {page.id === "REVENUE" ? <RevenuePage d={d} commentFor={commentFor} ai={ai} /> : null}
+            {page.id === "PRODUCTS" ? <ProductsPage d={d} commentFor={commentFor} ai={ai} /> : null}
             {page.id === "HISTORY" ? <HistoryPage d={d} submissionId={submissionId} showAudit={showAudit} onToggleAudit={() => setShowAudit((v) => !v)} /> : null}
           </div>
 
@@ -342,7 +381,7 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                   <label className="block">
                     <span className="text-xs font-bold text-prism-muted">Attach to</span>
                     <select value={selected?.key ?? ""} onChange={(e) => setTargetKey(e.target.value)} className="mt-1 w-full rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-prism-border">
-                      {pageTargets.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                      {attachChoices.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
                     </select>
                   </label>
                   {selected?.context ? (
@@ -682,7 +721,7 @@ function EstablishmentPage({ d, commentFor, targets }: { d: SubmissionDetail; co
   );
 }
 
-function RevenuePage({ d, commentFor }: { d: SubmissionDetail; commentFor: CommentFor }) {
+function RevenuePage({ d, commentFor, ai }: { d: SubmissionDetail; commentFor: CommentFor; ai: Ai }) {
   const snap = d.submission.snapshot;
   const interview = snap.initiation;
   const currency = currencySymbol(snap.options, interview.revenue.currency);
@@ -704,6 +743,7 @@ function RevenuePage({ d, commentFor }: { d: SubmissionDetail; commentFor: Comme
         <div className="ml-auto">{commentFor(target("INITIATION", interview.initiationId, "revenue.annual", "Annual revenue"))}</div>
       </div>
 
+      <CpcSummary ai={ai} ids={interview.categories.map((c) => c.id)} nouns={["category", "categories"]} />
       <div className="overflow-x-auto rounded-2xl ring-1 ring-prism-border/60">
         <table className="w-full text-sm">
           <caption className="sr-only">Major product categories</caption>
@@ -714,7 +754,10 @@ function RevenuePage({ d, commentFor }: { d: SubmissionDetail; commentFor: Comme
             {interview.categories.map((c) => (
               <tr key={c.id} className="border-t border-prism-border/50 align-top">
                 <th scope="row" className="px-3 py-2 text-left font-bold">{c.name}</th>
-                <td className="max-w-xs px-3 py-2"><CpcText code={c.cpcCode} cpc={d.cpc} /></td>
+                <td className="max-w-sm px-3 py-2">
+                  <CpcText code={c.cpcCode} cpc={d.cpc} />
+                  <CpcVerdictView ai={ai} recordId={c.id} t={target("CATEGORY", c.id, null, c.name)} name={c.name} code={c.cpcCode} codeText={c.cpcCode ? d.cpc?.[c.cpcCode] : undefined} />
+                </td>
                 <td className="px-3 py-2">{c.revenueBasis === "PERCENT" ? `${amountText(c.revenuePercent)}%` : amountText(c.revenueValue, `${currency} `)}</td>
                 <td className="px-3 py-2">{c.products.length} of {c.productCount ?? "?"}</td>
                 <td className="pr-2 text-right">{commentFor(target("CATEGORY", c.id, null, c.name))}</td>
@@ -764,18 +807,19 @@ function RevenuePage({ d, commentFor }: { d: SubmissionDetail; commentFor: Comme
   );
 }
 
-function ProductsPage({ d, commentFor }: { d: SubmissionDetail; commentFor: CommentFor }) {
+function ProductsPage({ d, commentFor, ai }: { d: SubmissionDetail; commentFor: CommentFor; ai: Ai }) {
   const interview = d.submission.snapshot.initiation;
   const products = interview.categories.flatMap((c) => c.products.map((p) => ({ c, p })));
   if (!products.length) return <p className="text-sm text-prism-muted">No products were recorded.</p>;
   return (
     <div className="space-y-6">
-      {products.map(({ c, p }) => <ProductView key={p.id} category={c} product={p} d={d} commentFor={commentFor} />)}
+      <CpcSummary ai={ai} ids={products.map(({ p }) => p.id)} nouns={["product", "products"]} />
+      {products.map(({ c, p }) => <ProductView key={p.id} category={c} product={p} d={d} commentFor={commentFor} ai={ai} />)}
     </div>
   );
 }
 
-function ProductView({ category, product: p, d, commentFor }: { category: Category; product: Product; d: SubmissionDetail; commentFor: CommentFor }) {
+function ProductView({ category, product: p, d, commentFor, ai }: { category: Category; product: Product; d: SubmissionDetail; commentFor: CommentFor; ai: Ai }) {
   const snap = d.submission.snapshot;
   return (
     <div>
@@ -783,6 +827,7 @@ function ProductView({ category, product: p, d, commentFor }: { category: Catego
         <div className="min-w-0">
           <h3 className="text-lg font-black text-prism-text">{p.name}</h3>
           <p className="text-sm text-prism-muted">{category.name} · CPC <CpcText code={p.cpcCode} cpc={d.cpc} inline /></p>
+          <CpcVerdictView ai={ai} recordId={p.id} t={target("PRODUCT", p.id, null, p.name)} name={p.name} code={p.cpcCode} codeText={p.cpcCode ? d.cpc?.[p.cpcCode] : undefined} />
         </div>
         {commentFor(target("PRODUCT", p.id, null, p.name))}
       </div>
@@ -939,6 +984,65 @@ function HistoryPage({ d, submissionId, showAudit, onToggleAudit }: { d: Submiss
         </button>
         {showAudit ? <AuditPanel initiationId={d.initiation.initiationId} /> : null}
       </div>
+    </div>
+  );
+}
+
+// The AI check as the review pages use it.
+type Ai = { check: CpcCheck | null; retry: () => void; suggest: ((t: Target, text: string) => void) | null };
+const VERDICT: Record<CpcVerdict["verdict"], { label: string; style: string }> = {
+  FITS: { label: "AI: code fits", style: "bg-emerald-50 text-emerald-800 ring-emerald-200" },
+  DOUBTFUL: { label: "AI: check this code", style: "bg-amber-50 text-amber-900 ring-amber-200" },
+  MISFIT: { label: "AI: code does not fit", style: "bg-rose-50 text-rose-800 ring-rose-200" },
+};
+
+// One category's or product's verdict: badge, reason, suggested code, and a
+// ready comment for the enumerator.
+function CpcVerdictView({ ai, recordId, t, name, code, codeText }: { ai: Ai; recordId: string; t: Target; name: string; code?: string | null; codeText?: string }) {
+  const check = ai.check;
+  if (!check?.enabled || !code) return null;
+  const r = check.results[recordId];
+  if (!r) {
+    return check.status === "CHECKING" || check.status === "PENDING"
+      ? <p className="mt-1 text-xs text-prism-muted"><span className="inline-block h-2 w-2 animate-pulse rounded-full bg-prism-purple align-middle" aria-hidden /> AI check of the code running…</p>
+      : null;
+  }
+  const v = VERDICT[r.verdict];
+  const text = `CPC ${code}${codeText ? ` (${codeText})` : ""} does not seem to fit "${name}". ${r.reason}${r.suggestedCode ? ` Consider ${r.suggestedCode}${r.suggestedDescription ? ` (${r.suggestedDescription})` : ""}.` : ""} Please check and correct the code.`;
+  return (
+    <div className="mt-1.5 space-y-1 text-xs">
+      <span className={clsx("inline-flex items-center rounded-full px-2 py-0.5 font-bold ring-1", v.style)}>{v.label}</span>
+      {r.verdict !== "FITS" ? (
+        <>
+          <p className="text-prism-text">{r.reason}</p>
+          {r.suggestedCode ? <p className="text-prism-muted">Suggested: <span className="font-mono font-bold text-prism-text">{r.suggestedCode}</span>{r.suggestedDescription ? ` · ${r.suggestedDescription}` : ""}</p> : null}
+          {ai.suggest ? <button type="button" onClick={() => ai.suggest!(t, text)} className="font-bold text-prism-purple underline">Add as comment</button> : null}
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+// The page's AI check in one line: how many fit, are doubtful, do not fit.
+function CpcSummary({ ai, ids, nouns }: { ai: Ai; ids: string[]; nouns: [string, string] }) {
+  const check = ai.check;
+  if (!check?.enabled || !ids.length) return null;
+  const verdicts = ids.map((id) => check.results[id]?.verdict).filter(Boolean);
+  const n = (v: CpcVerdict["verdict"]) => verdicts.filter((x) => x === v).length;
+  return (
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-slate-50 px-4 py-3 text-sm ring-1 ring-prism-border/60">
+      <span className="font-bold text-prism-text">AI check of CPC codes</span>
+      {verdicts.length ? (
+        <span className="text-prism-muted">
+          <span className="font-bold text-rose-700">{n("MISFIT")} do not fit</span> · <span className="font-bold text-amber-800">{n("DOUBTFUL")} to check</span> · <span className="font-bold text-emerald-700">{n("FITS")} fit</span>
+          {verdicts.length < ids.length ? ` · ${ids.length - verdicts.length} ${nouns[ids.length - verdicts.length === 1 ? 0 : 1]} not checked yet` : ""}
+        </span>
+      ) : null}
+      {check.status === "CHECKING" || check.status === "PENDING" ? <span className="text-prism-muted">Checking… this takes up to a minute.</span> : null}
+      {check.status === "UNAVAILABLE" ? (
+        <span className="text-amber-900">{check.message ?? "The check is not available."} <button type="button" onClick={ai.retry} className="font-bold underline">Try again</button></span>
+      ) : null}
+      <span className="w-full text-xs text-prism-muted">Advisory: produced by an AI model from the names and codes only. Verify before returning the submission.</span>
     </div>
   );
 }
