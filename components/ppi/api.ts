@@ -30,6 +30,16 @@ export type QueueItem = {
   decidesAt?: "SUPERVISOR" | "RS" | "HQ" | null;
 };
 
+// GET /review-queue/filters: the choices inside the reviewer's scope
+// ("none": establishments without a region or district recorded).
+export type QueueFilterOptions = {
+  scope: "NATIONAL" | "REGION" | "SUPERVISED";
+  regions: { id: string; name: string }[];
+  districts: { id: string; name: string; regionId: string | null }[];
+  supervisors: { id: string; name: string; regionIds: string[] }[];
+  readers: { id: string; name: string; regionIds: string[]; supervisorIds: string[] }[];
+};
+
 // `reason`: the enumerator's explanation where a price check asked for one
 // (e.g. selling below purchase, a large change).
 export type Price = { id: string; series: string; kind: "CURRENT" | "HISTORY"; month: string; amount: Amount; currency: Coded; version: number; reason?: string | null };
@@ -172,6 +182,7 @@ export async function ppiApi<T>(path: string, init?: { method?: "GET" | "POST" |
 // and every parameter of the request.
 export const ppiKeys = {
   queue: (params: string) => `ppi:queue:${params}`,
+  queueFilters: () => "ppi:queue-filters",
   submission: (submissionId: string) => `ppi:submission:${submissionId}`,
   audit: (initiationId: string, filter: string) => `ppi:audit:${initiationId}:${filter}`,
   exportOptions: (userId: string) => `ppi:export-options:${userId}`,

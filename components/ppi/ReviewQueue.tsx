@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import clsx from "clsx";
-import { formatDateTime, ppiKeys, QUESTIONNAIRE_LABEL, STAGE_LABEL, type QueueItem } from "./api";
+import { formatDateTime, ppiKeys, QUESTIONNAIRE_LABEL, STAGE_LABEL, type QueueFilterOptions, type QueueItem } from "./api";
 import { usePpiQuery } from "./usePpiQuery";
 import { TableSearch } from "@/components/common/TableSearch";
 
@@ -21,14 +21,22 @@ const STATUS_STYLE: Record<QueueItem["workflowStatus"], string> = {
   IN_PROGRESS: "bg-slate-100 text-prism-muted",
 };
 
+type Filters = { regionId: string; districtId: string; supervisorId: string; readerId: string };
+const NO_FILTERS: Filters = { regionId: "", districtId: "", supervisorId: "", readerId: "" };
+const NONE = "none";
+
 // PPI initiations in the reviewer's scope (the backend applies the scope:
 // a Supervisor sees the establishments they supervise, an RS their region,
-// HQ everything).
+// HQ everything). The filters narrow it further, never beyond it.
 export function ReviewQueue() {
   const [status, setStatus] = useState<(typeof STATUSES)[number]["value"]>("SUBMITTED");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
-  const params = new URLSearchParams({ status, page: String(page), pageSize: "25", ...(search.trim() ? { search: search.trim() } : {}) }).toString();
+  const [filters, setFilters] = useState<Filters>(NO_FILTERS);
+  const [open, setOpen] = useState(false);
+  const options = usePpiQuery<QueueFilterOptions>(ppiKeys.queueFilters(), "/review-queue/filters");
+  const chosen = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
+  const params = new URLSearchParams({ status, page: String(page), pageSize: "25", ...(search.trim() ? { search: search.trim() } : {}), ...chosen }).toString();
   const queue = usePpiQuery<{ total: number; page: number; pageSize: number; items: QueueItem[] }>(ppiKeys.queue(params), `/review-queue?${params}`);
   const items = queue.data?.items ?? [];
   const pages = queue.data ? Math.max(1, Math.ceil(queue.data.total / queue.data.pageSize)) : 1;
@@ -44,6 +52,9 @@ export function ReviewQueue() {
         {/* Debounced: one request once typing pauses, not one per key. */}
         <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search name or code" className="w-full sm:w-72" />
       </header>
+
+      <QueueFilters options={options.data} filters={filters} open={open} onToggle={() => setOpen((v) => !v)}
+        onChange={(next) => { setFilters(next); setPage(1); }} />
 
       <div role="tablist" aria-label="Status" className="flex flex-wrap gap-2">
         {STATUSES.map((s) => (
@@ -114,6 +125,85 @@ export function ReviewQueue() {
           <button disabled={page >= pages} onClick={() => setPage((p) => p + 1)} className="rounded-full bg-white px-3 py-1.5 font-bold ring-1 ring-prism-border/70 disabled:opacity-40">Next</button>
         </nav>
       ) : null}
+    </section>
+  );
+}
+
+// Region (HQ), district and supervisor (HQ, RS), reader (everyone): the
+// dashboard's rules. A region narrows the other lists, a supervisor the
+// readers; changing one clears the choices below it that no longer fit.
+function QueueFilters({ options, filters, open, onToggle, onChange }: {
+  options: QueueFilterOptions | null | undefined;
+  filters: Filters;
+  open: boolean;
+  onToggle: () => void;
+  onChange: (next: Filters) => void;
+}) {
+  if (!options) return null;
+  const { regionId, supervisorId } = filters;
+  const showRegion = options.scope === "NATIONAL";
+  const showDistrict = options.scope === "NATIONAL" || options.scope === "REGION";
+  const showSupervisor = showDistrict;
+  const districts = options.districts.filter((d) => !regionId || d.regionId === regionId || (regionId === NONE && !d.regionId));
+  const supervisors = options.supervisors.filter((s) => !regionId || s.regionIds.includes(regionId));
+  const readers = options.readers.filter((r) => (!regionId || r.regionIds.includes(regionId)) && (!supervisorId || r.supervisorIds.includes(supervisorId)));
+  const active = Object.values(filters).filter(Boolean).length;
+  const select = "min-h-10 w-full rounded-xl border border-prism-border bg-white px-3 py-2 text-xs font-bold text-prism-text focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-prism-purple";
+  const label = "flex flex-col gap-1 text-[11px] font-bold uppercase tracking-[0.12em] text-prism-muted sm:min-w-44 sm:max-w-xs sm:flex-1";
+  return (
+    <section aria-label="Filters" className="rounded-3xl bg-white p-4 shadow-sm ring-1 ring-prism-border/60 sm:p-5">
+      {/* Phones: the filters fold away behind one button. */}
+      <button type="button" onClick={onToggle} aria-expanded={open} aria-controls="ppi-queue-filters"
+        className="flex min-h-10 w-full items-center justify-between rounded-xl bg-prism-bg px-3 text-xs font-bold text-prism-text sm:hidden">
+        <span>Filters{active ? ` (${active} active)` : ""}</span>
+        <span aria-hidden="true">{open ? "▴" : "▾"}</span>
+      </button>
+      <div id="ppi-queue-filters" className={clsx("grid-cols-1 gap-3 sm:flex sm:flex-wrap sm:items-end", open ? "mt-3 grid sm:mt-0" : "hidden")}>
+        {showRegion ? (
+          <label className={label}>
+            Region
+            <select value={regionId} data-testid="queue-filter-region" className={select}
+              onChange={(e) => onChange({ regionId: e.target.value, districtId: "", supervisorId: "", readerId: "" })}>
+              <option value="">All regions</option>
+              {options.regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+            </select>
+          </label>
+        ) : null}
+        {showDistrict ? (
+          <label className={label}>
+            District
+            <select value={filters.districtId} data-testid="queue-filter-district" className={select}
+              onChange={(e) => onChange({ ...filters, districtId: e.target.value })}>
+              <option value="">All districts</option>
+              {districts.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </label>
+        ) : null}
+        {showSupervisor ? (
+          <label className={label}>
+            Supervisor
+            <select value={supervisorId} data-testid="queue-filter-supervisor" className={select}
+              onChange={(e) => onChange({ ...filters, supervisorId: e.target.value, readerId: "" })}>
+              <option value="">All supervisors</option>
+              {supervisors.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+            </select>
+          </label>
+        ) : null}
+        <label className={label}>
+          Reader
+          <select value={filters.readerId} data-testid="queue-filter-reader" className={select}
+            onChange={(e) => onChange({ ...filters, readerId: e.target.value })}>
+            <option value="">All readers</option>
+            {readers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+          </select>
+        </label>
+        {active ? (
+          <button type="button" onClick={() => onChange(NO_FILTERS)} data-testid="queue-filter-clear"
+            className="min-h-10 rounded-xl px-3 text-xs font-bold text-prism-purple hover:bg-prism-bg">
+            Clear filters
+          </button>
+        ) : null}
+      </div>
     </section>
   );
 }
