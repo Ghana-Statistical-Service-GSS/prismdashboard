@@ -6,8 +6,7 @@ import { FormEvent, ReactNode, useEffect, useRef, useState } from "react";
 import clsx from "clsx";
 import {
   amountText, codedText, formatDateTime, formatDecimal, PpiApiError, ppiApi, ppiKeys, QUESTIONNAIRE_LABEL, STAGE_LABEL,
-  type AuditChange, type Category, type CpcCheck, type CpcVerdict, type Product, type QueueItem, type ReviewIssue, type Snapshot, type Specification, type SubmissionDetail,
-} from "./api";
+  type AuditChange, type Category, type CpcCheck, type CpcVerdict, type Product, type QueueItem, type ReviewIssue, type Snapshot, type Specification, type SubmissionDetail, type QualityFlag } from "./api";
 import { invalidatePpi, usePpiQuery } from "./usePpiQuery";
 
 // One submitted version, reviewed page by page: the reviewer marks each page
@@ -118,6 +117,24 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
   const est = snap.establishment;
   const interview = snap.initiation;
   const canComment = d.canDecide;
+  const flags = d.qualityFlags ?? [];
+  const flagsOn = (pageId: PageId) => flags.filter((f) => f.target.page === pageId);
+  // A flag added to the return comments: on its record (appended to a
+  // comment already there), editable in the comments list like any other.
+  const addFlag = (f: QualityFlag) => setIssues((list) => {
+    const key = `${f.target.entityType}:${f.target.recordId}:${f.target.field ?? ""}`;
+    const text = `${f.code}: ${f.message}`;
+    const existing = list.find((i) => keyOf(i) === key);
+    if (!existing) return [...list, { entityType: f.target.entityType, recordId: f.target.recordId, field: f.target.field, comment: text.slice(0, 1000), label: f.target.label }];
+    if (existing.comment.includes(text) || existing.comment.length + 1 + text.length > 1000) return list;
+    return list.map((i) => (i === existing ? { ...i, comment: `${i.comment}\n${text}` } : i));
+  });
+  // A record whose comment has no room left for the flag (1000 characters).
+  const flagFull = (f: QualityFlag) => {
+    const existing = issues.find((i) => keyOf(i) === `${f.target.entityType}:${f.target.recordId}:${f.target.field ?? ""}`);
+    return !!existing && !existing.comment.includes(`${f.code}: ${f.message}`) && existing.comment.length + 1 + f.code.length + 2 + f.message.length > 1000;
+  };
+  const flagAdded = (f: QualityFlag) => issues.some((i) => keyOf(i) === `${f.target.entityType}:${f.target.recordId}:${f.target.field ?? ""}` && i.comment.includes(`${f.code}: ${f.message}`));
   const page = PAGES[pageIndex];
   const last = pageIndex === PAGES.length - 1;
 
@@ -321,7 +338,10 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
                         </span>
                       ) : null}
                       <span className="min-w-0 flex-1">
-                        <span className={clsx("block text-sm font-bold", current ? "text-prism-purple" : "text-prism-text")}>{p.title}</span>
+                        <span className={clsx("block text-sm font-bold", current ? "text-prism-purple" : "text-prism-text")}>
+                          {p.title}
+                          <PageFlagCount flags={flagsOn(p.id)} />
+                        </span>
                         {checklist ? <span className="block text-xs text-prism-muted">{done ? "Reviewed" : current ? "In progress" : "Not reviewed"}</span> : null}
                       </span>
                     </button>
@@ -351,6 +371,8 @@ export function SubmissionReview({ submissionId }: { submissionId: string }) {
           {checklist && !complete ? (
             <p className="mt-4 flex items-center gap-2 rounded-2xl bg-violet-50 px-4 py-3 text-sm font-semibold text-prism-purple"><LockIcon /><span>Review all {PAGES.length} pages before approving or returning this submission.</span></p>
           ) : null}
+
+          <QualityFlags flags={flagsOn(page.id)} canComment={canComment} onAdd={addFlag} added={flagAdded} full={flagFull} />
 
           <div className="mt-4">
             {page.id === "ESTABLISHMENT" ? <EstablishmentPage d={d} commentFor={commentFor} targets={targets.ESTABLISHMENT} /> : null}
@@ -1217,3 +1239,59 @@ function AuditPage({ initiationId, before, onOlder }: { initiationId: string; be
   );
 }
 
+
+const PRIORITY_STYLE: Record<QualityFlag["priority"], string> = {
+  HIGH: "bg-rose-100 text-rose-800", MEDIUM: "bg-amber-100 text-amber-900", LOW: "bg-slate-100 text-prism-muted",
+};
+const PRIORITY_LABEL: Record<QualityFlag["priority"], string> = { HIGH: "High", MEDIUM: "Medium", LOW: "Low" };
+
+function PageFlagCount({ flags }: { flags: QualityFlag[] }) {
+  if (!flags.length) return null;
+  const high = flags.filter((f) => f.priority === "HIGH").length;
+  return (
+    <span className={clsx("ml-2 inline-block rounded-full px-1.5 py-0.5 align-middle text-[10px] font-black", high ? "bg-rose-100 text-rose-800" : "bg-amber-100 text-amber-900")}
+      title={`${flags.length} data quality flag${flags.length === 1 ? "" : "s"}${high ? `, ${high} high priority` : ""}`}>
+      {flags.length} flag{flags.length === 1 ? "" : "s"}
+    </span>
+  );
+}
+
+// The page's data quality flags (advisory): what conflicts or looks
+// implausible, for the reviewer to check and, if needed, return.
+function QualityFlags({ flags, canComment, onAdd, added, full }: {
+  flags: QualityFlag[]; canComment: boolean; onAdd: (f: QualityFlag) => void; added: (f: QualityFlag) => boolean; full: (f: QualityFlag) => boolean;
+}) {
+  if (!flags.length) return null;
+  const high = flags.filter((f) => f.priority === "HIGH").length;
+  return (
+    <section aria-labelledby="ppi-quality-title" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/60 p-4" data-testid="quality-flags">
+      <h3 id="ppi-quality-title" className="text-sm font-black text-amber-950">
+        Data quality: {flags.length} flag{flags.length === 1 ? "" : "s"} on this page{high ? ` (${high} high priority)` : ""}
+      </h3>
+      <p className="mt-1 text-xs text-amber-950/80">Answers that conflict or look implausible. Check each one; return the submission if it needs correcting.</p>
+      <ul className="mt-3 space-y-2">
+        {flags.map((f, k) => (
+          <li key={`${f.code}-${f.target.recordId}-${k}`} className="flex flex-col gap-2 rounded-xl bg-white p-3 ring-1 ring-amber-200 sm:flex-row sm:items-start">
+            <span className="flex shrink-0 items-center gap-1.5">
+              <span className={clsx("rounded-full px-2 py-0.5 text-[11px] font-black", PRIORITY_STYLE[f.priority])}>{PRIORITY_LABEL[f.priority]}</span>
+              <span className="rounded-md bg-prism-bg px-1.5 py-0.5 font-mono text-[11px] font-bold text-prism-muted" title={f.group} aria-label={`${f.code}, ${f.group}`}>{f.code}</span>
+            </span>
+            <span className="min-w-0 flex-1 text-sm text-prism-text">{f.message}</span>
+            {canComment ? (
+              added(f)
+                ? <span className="shrink-0 self-start text-xs font-bold text-emerald-700">Added to comments</span>
+                : full(f)
+                  ? <span className="shrink-0 self-start text-xs text-prism-muted">This record&apos;s comment is full: shorten it to add this flag.</span>
+                  : (
+                  <button type="button" onClick={() => onAdd(f)} data-testid={`quality-add-${f.code}`}
+                    className="shrink-0 self-start rounded-xl px-3 py-1.5 text-xs font-bold text-prism-purple ring-1 ring-prism-border hover:bg-prism-bg">
+                    Add to return comments
+                  </button>
+                )
+            ) : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}

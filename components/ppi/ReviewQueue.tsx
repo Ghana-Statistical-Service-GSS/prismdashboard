@@ -21,8 +21,18 @@ const STATUS_STYLE: Record<QueueItem["workflowStatus"], string> = {
   IN_PROGRESS: "bg-slate-100 text-prism-muted",
 };
 
-type Filters = { regionId: string; districtId: string; supervisorId: string; readerId: string };
-const NO_FILTERS: Filters = { regionId: "", districtId: "", supervisorId: "", readerId: "" };
+type Filters = { regionId: string; districtId: string; supervisorId: string; readerId: string; decidedBy: string; flags: string };
+const NO_FILTERS: Filters = { regionId: "", districtId: "", supervisorId: "", readerId: "", decidedBy: "", flags: "" };
+
+// A stage's decision on the current submission.
+const DECIDED_BY = [
+  { value: "SUPERVISOR:APPROVED", label: "Approved by Supervisor" },
+  { value: "SUPERVISOR:RETURNED", label: "Returned by Supervisor" },
+  { value: "RS:APPROVED", label: "Approved by RS" },
+  { value: "RS:RETURNED", label: "Returned by RS" },
+  { value: "HQ:APPROVED", label: "Approved by HQ" },
+  { value: "HQ:RETURNED", label: "Returned by HQ" },
+] as const;
 const NONE = "none";
 
 // PPI initiations in the reviewer's scope (the backend applies the scope:
@@ -37,7 +47,7 @@ export function ReviewQueue() {
   const options = usePpiQuery<QueueFilterOptions>(ppiKeys.queueFilters(), "/review-queue/filters");
   const chosen = Object.fromEntries(Object.entries(filters).filter(([, v]) => v));
   const params = new URLSearchParams({ status, page: String(page), pageSize: "25", ...(search.trim() ? { search: search.trim() } : {}), ...chosen }).toString();
-  const queue = usePpiQuery<{ total: number; page: number; pageSize: number; items: QueueItem[] }>(ppiKeys.queue(params), `/review-queue?${params}`);
+  const queue = usePpiQuery<{ total: number; page: number; pageSize: number; items: QueueItem[]; qualityReady?: boolean }>(ppiKeys.queue(params), `/review-queue?${params}`);
   const items = queue.data?.items ?? [];
   const pages = queue.data ? Math.max(1, Math.ceil(queue.data.total / queue.data.pageSize)) : 1;
 
@@ -53,8 +63,15 @@ export function ReviewQueue() {
         <TableSearch value={search} onChange={(value) => { setSearch(value); setPage(1); }} placeholder="Search name or code" className="w-full sm:w-72" />
       </header>
 
-      <QueueFilters options={options.data} filters={filters} open={open} onToggle={() => setOpen((v) => !v)}
-        onChange={(next) => { setFilters(next); setPage(1); }} />
+      <QueueFilters options={options.data} filters={filters} open={open} onToggle={() => setOpen((v) => !v)} qualityReady={queue.data?.qualityReady ?? false}
+        onChange={(next) => {
+          // A decision filter looks across statuses ("returned by" is never waiting for review).
+          if (next.decidedBy && next.decidedBy !== filters.decidedBy) setStatus("ALL");
+          // Cleared again: back to the cases waiting for review.
+          if (!next.decidedBy && filters.decidedBy) setStatus("SUBMITTED");
+          setFilters(next);
+          setPage(1);
+        }} />
 
       <div role="tablist" aria-label="Status" className="flex flex-wrap gap-2">
         {STATUSES.map((s) => (
@@ -81,15 +98,16 @@ export function ReviewQueue() {
               <th scope="col" className="hidden px-4 py-3 md:table-cell">Questionnaire</th>
               <th scope="col" className="hidden px-4 py-3 lg:table-cell">Enumerator</th>
               <th scope="col" className="px-4 py-3">Status</th>
+              <th scope="col" className="hidden px-4 py-3 md:table-cell">Flags</th>
               <th scope="col" className="hidden px-4 py-3 sm:table-cell">Submitted</th>
               <th scope="col" className="px-4 py-3"><span className="sr-only">Open</span></th>
             </tr>
           </thead>
           <tbody>
             {queue.loading && !items.length ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-prism-muted">Loading…</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-prism-muted">Loading…</td></tr>
             ) : !items.length ? (
-              <tr><td colSpan={6} className="px-4 py-8 text-center text-prism-muted">Nothing here.</td></tr>
+              <tr><td colSpan={7} className="px-4 py-8 text-center text-prism-muted">Nothing here.</td></tr>
             ) : items.map((item) => (
               <tr key={item.initiationId} className="border-t border-prism-border/50">
                 <td className="px-4 py-3">
@@ -104,6 +122,7 @@ export function ReviewQueue() {
                   </span>
                   {item.submissionNo > 1 ? <span className="ml-2 text-[11px] text-prism-muted">submission {item.submissionNo}</span> : null}
                 </td>
+                <td className="hidden px-4 py-3 md:table-cell"><FlagCounts flags={item.flags} /></td>
                 <td className="hidden px-4 py-3 text-xs text-prism-muted sm:table-cell">{formatDateTime(item.submittedAt)}</td>
                 <td className="px-4 py-3 text-right">
                   {item.currentSubmissionId ? (
@@ -132,12 +151,13 @@ export function ReviewQueue() {
 // Region (HQ), district and supervisor (HQ, RS), reader (everyone): the
 // dashboard's rules. A region narrows the other lists, a supervisor the
 // readers; changing one clears the choices below it that no longer fit.
-function QueueFilters({ options, filters, open, onToggle, onChange }: {
+function QueueFilters({ options, filters, open, onToggle, onChange, qualityReady }: {
   options: QueueFilterOptions | null | undefined;
   filters: Filters;
   open: boolean;
   onToggle: () => void;
   onChange: (next: Filters) => void;
+  qualityReady: boolean;
 }) {
   if (!options) return null;
   const { regionId, supervisorId } = filters;
@@ -163,7 +183,7 @@ function QueueFilters({ options, filters, open, onToggle, onChange }: {
           <label className={label}>
             Region
             <select value={regionId} data-testid="queue-filter-region" className={select}
-              onChange={(e) => onChange({ regionId: e.target.value, districtId: "", supervisorId: "", readerId: "" })}>
+              onChange={(e) => onChange({ ...filters, regionId: e.target.value, districtId: "", supervisorId: "", readerId: "" })}>
               <option value="">All regions</option>
               {options.regions.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
             </select>
@@ -197,6 +217,25 @@ function QueueFilters({ options, filters, open, onToggle, onChange }: {
             {readers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </label>
+        <label className={label}>
+          Decided by
+          <select value={filters.decidedBy} data-testid="queue-filter-decided" className={select}
+            onChange={(e) => onChange({ ...filters, decidedBy: e.target.value })}>
+            <option value="">Any decision</option>
+            {DECIDED_BY.map((d) => <option key={d.value} value={d.value}>{d.label}</option>)}
+          </select>
+        </label>
+        {qualityReady ? (
+          <label className={label}>
+            Data quality
+            <select value={filters.flags} data-testid="queue-filter-flags" className={select}
+              onChange={(e) => onChange({ ...filters, flags: e.target.value })}>
+              <option value="">All cases</option>
+              <option value="HIGH">With high-priority flags</option>
+              <option value="ANY">With any flags</option>
+            </select>
+          </label>
+        ) : null}
         {active ? (
           <button type="button" onClick={() => onChange(NO_FILTERS)} data-testid="queue-filter-clear"
             className="min-h-10 rounded-xl px-3 text-xs font-bold text-prism-purple hover:bg-prism-bg">
@@ -205,5 +244,18 @@ function QueueFilters({ options, filters, open, onToggle, onChange }: {
         ) : null}
       </div>
     </section>
+  );
+}
+
+// The current submission's flags: high in red, else medium/low in amber.
+function FlagCounts({ flags }: { flags?: QueueItem["flags"] }) {
+  if (flags == null) return <span className="text-xs text-prism-muted" title="Not checked yet"><span aria-hidden="true">–</span><span className="sr-only">Not checked yet</span></span>;
+  const total = flags.high + flags.medium + flags.low;
+  if (!total) return <span className="text-xs text-prism-muted">None</span>;
+  return (
+    <span className="inline-flex flex-wrap gap-1">
+      {flags.high ? <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-bold text-rose-800">{flags.high} high</span> : null}
+      {flags.medium + flags.low ? <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-bold text-amber-900">{flags.medium + flags.low} other</span> : null}
+    </span>
   );
 }

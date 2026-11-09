@@ -25,6 +25,8 @@ export type QueueItem = {
   submittedAt: string | null;
   roundLabel: string;
   canDecide: boolean;
+  // Data quality flags of the current submission (null: not computed yet).
+  flags?: { high: number; medium: number; low: number } | null;
   // The stage the reviewer's decision is recorded at: ahead of reviewStage
   // when they decide before an earlier stage (RS before the Supervisor, HQ at any).
   decidesAt?: "SUPERVISOR" | "RS" | "HQ" | null;
@@ -113,7 +115,18 @@ export type ReviewEvent = {
   // "SUBMITTED:<stage>": where the case waited when it was decided.
   statusBefore?: string;
 };
+// A data quality flag on a submission (prism_backend ppi/services/quality.service.js):
+// advisory, for the reviewer to check and, if needed, return with a comment.
+export type QualityFlag = {
+  code: string;
+  group: string;
+  priority: "HIGH" | "MEDIUM" | "LOW";
+  message: string;
+  target: { page: "ESTABLISHMENT" | "REVENUE" | "PRODUCTS"; entityType: string; recordId: string; field: string | null; label: string };
+};
+
 export type SubmissionDetail = {
+  qualityFlags?: QualityFlag[];
   submission: {
     submissionId: string; submissionNo: number; submittedByName: string; submittedAt: string; configVersion: number;
     snapshot: Snapshot; preload: Record<string, unknown>; config: Record<string, unknown>;
